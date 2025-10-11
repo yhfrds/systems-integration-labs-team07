@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Profile</h2>
+  <form method="post">
+    <label>Name:<br/><input name="name" value="{{ current_user.name }}" required/></label><br/><br/>
+    <label>Address:<br/><textarea name="address">{{ current_user.address }}</textarea></label><br/><br/>
+    <button type="submit">Update</button>
+  </form>
+{% endblock %}
