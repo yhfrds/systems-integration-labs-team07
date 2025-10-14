@@ -1,5 +1,5 @@
 from decimal import Decimal
-from app import app, db, Product, User
+from projekt.app import app, db, Product, User
 with app.app_context():
     # Create sample products
     p1 = Product(name='T-Shirt', description='Cotton tee', price=Decimal('9.99'))
