@@ -2,8 +2,30 @@
 {% block content %}
   <h2>Profile</h2>
   <form method="post">
-    <label>Name:<br/><input name="name" value="{{ current_user.name }}" required/></label><br/><br/>
-    <label>Address:<br/><textarea name="address">{{ current_user.address }}</textarea></label><br/><br/>
-    <button type="submit">Update</button>
+    <label>Name:<br/>
+      <input name="name" value="{{ current_user.name }}" required/>
+    </label><br/><br/>
+
+    <label>Address:<br/>
+      <textarea name="address">{{ current_user.address }}</textarea>
+    </label><br/><br/>
+
+    <hr>
+    <h3>Change Email or Password</h3>
+    <p>To change your email or password, please enter your current password.</p>
+
+    <label>Email:<br/>
+      <input name="email" type="email" value="{{ current_user.email }}" required/>
+    </label><br/><br/>
+
+    <label>New Password (leave blank to keep current):<br/>
+      <input name="new_password" type="password"/>
+    </label><br/><br/>
+
+    <label>Current Password (required for changes):<br/>
+      <input name="current_password" type="password" required/>
+    </label><br/><br/>
+
+    <button type="submit">Update Profile</button>
   </form>
 {% endblock %}

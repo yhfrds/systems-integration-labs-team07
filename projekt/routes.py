@@ -101,13 +101,47 @@ def logout():
 @app.route('/profile', methods=['GET', 'POST'])
 @login_required
 def profile():
-    # ... (Code für profile kopieren)
     if request.method == 'POST':
-        current_user.name = request.form['name'].strip()
-        current_user.address = request.form.get('address', '').strip()
-        db.session.commit()
-        flash('Profile updated')
+        # Formulardaten abrufen
+        name = request.form['name'].strip()
+        address = request.form.get('address', '').strip()
+        email = request.form['email'].strip().lower()
+        current_password = request.form['current_password']
+        new_password = request.form.get('new_password')
+
+        # 1. Aktuelles Passwort überprüfen
+        if not current_user.check_password(current_password):
+            flash('Incorrect current password. No changes were made.')
+            return redirect(url_for('profile'))
+
+        # 2. Allgemeine Informationen aktualisieren
+        current_user.name = name
+        current_user.address = address
+        update_made = True
+
+        # 3. E-Mail-Adresse aktualisieren (falls geändert)
+        if current_user.email != email:
+            # Prüfen, ob die neue E-Mail bereits vergeben ist
+            if User.query.filter(User.email == email, User.id != current_user.id).first():
+                flash('This email address is already in use by another account.')
+                return redirect(url_for('profile'))
+            current_user.email = email
+            update_made = True
+
+        # 4. Passwort aktualisieren (falls ein neues eingegeben wurde)
+        if new_password:
+            current_user.set_password(new_password)
+            update_made = True
+        
+        # 5. Änderungen in der Datenbank speichern
+        if update_made:
+            db.session.commit()
+            flash('Profile updated successfully.')
+        else:
+            flash('No changes detected.')
+
         return redirect(url_for('profile'))
+        
     return render_template('profile.html')
 
 # --- Cart & Order Routes ---
