@@ -5,10 +5,32 @@ A lightweight e-commerce application built with Flask, demonstrating core online
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Python 3.8 or higher
-- pip (Python package manager)
+- Docker and Docker Compose
+  OR
+- Python 3.8 or higher with pip
 
-### Quick Setup
+### Quick Setup with Docker (Recommended)
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yhfrds/systems-integration-labs-team07.git
+   cd systems-integration-labs-team07
+   ```
+
+2. Build and start the application:
+   ```bash
+   docker-compose up --build
+   ```
+
+The application will be available at `http://localhost:5000`
+
+#### Using Sample Data with Docker
+To add sample data to your Docker container:
+```bash
+docker-compose exec web python seed_db.py
+```
+
+### Alternative: Local Setup without Docker
 
 1. Create and activate a virtual environment:
    ```bash
@@ -57,6 +79,8 @@ Visit `http://localhost:5000` in your browser to see the application.
 ├── create_db.py        # Database initialization script
 ├── seed_db.py         # Sample data population script
 ├── requirements.txt    # Project dependencies
+├── Dockerfile         # Docker image configuration
+├── docker-compose.yml # Docker service orchestration
 ├── instance/          # Database file location
 │   └── shop.db       # SQLite database file
 └── templates/         # Jinja2 HTML templates
@@ -101,6 +125,11 @@ Visit `http://localhost:5000` in your browser to see the application.
 - **Development Mode**: The current `SECRET_KEY` is for development only. Change it in production.
 - **Admin Access**: Product creation currently has no admin protection - implement role-based access in production.
 - **Password Security**: Passwords are hashed using Werkzeug's security utilities.
+- **Docker Security**: The provided Docker configuration is for development. For production:
+  - Use a non-root user in the container
+  - Change the `SECRET_KEY`
+  - Configure proper logging
+  - Consider using a production-grade database
 
 ## 🤝 Contributing
 
@@ -108,6 +137,27 @@ Visit `http://localhost:5000` in your browser to see the application.
 2. Make your changes
 3. Test thoroughly
 4. Submit a pull request
+
+## 🐳 Docker Development
+
+### Common Docker Commands
+
+- Start the application: `docker-compose up`
+- Rebuild and start: `docker-compose up --build`
+- Run in background: `docker-compose up -d`
+- Stop containers: `docker-compose down`
+- View logs: `docker-compose logs -f`
+- Execute command in container: `docker-compose exec web <command>`
+- Reset database: 
+  ```bash
+  docker-compose down -v  # Remove volume
+  docker-compose up --build  # Rebuild with fresh DB
+  ```
+
+### Data Persistence
+- The SQLite database is stored in a Docker volume (`db-data`)
+- Data persists between container restarts
+- To reset data, remove the volume with `docker-compose down -v`
 
 ## ❗ Known Issues / TODOs
 

@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - db-data:/app/instance
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - SECRET_KEY=change-me-in-production
+    restart: unless-stopped
+
+volumes:
+  db-data: # Persistent volume for the SQLite database
