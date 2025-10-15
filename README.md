@@ -40,13 +40,15 @@ The application will be available at `http://localhost:5000`
 
 Visit `http://localhost:5000` in your browser to see the application.
 
+<!-- irrelevant at the moment
 #### Using Sample Data with Docker
 To add sample data to your Docker container:
 ```bash
 docker-compose exec web python seed_db.py
-```
----
-## 🔹 Advanced/Alternative: Local Python Setup (Not Recommended)
+``` -->
+
+
+## 🔷 Advanced/Alternative: Local Python Setup (Not Recommended)
 
 If you are an advanced user and prefer to run the app without Docker, you need Python 3.10 or higher. [Download Python](https://www.python.org/downloads/)
 
