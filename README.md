@@ -4,10 +4,30 @@ A lightweight e-commerce application built with Flask, demonstrating core online
 
 ## 🚀 Getting Started
 
-### Prerequisites
-- Docker and Docker Compose (with WSL2 enabled on Windows)
-  OR
-- Python 3.10 or higher with pip
+### Prerequisites (Docker Only)
+
+**Docker is the recommended and supported way to run this project.**
+
+**What is Docker?** Docker lets you run this app without worrying about installing all the right software. It works the same on Windows, Mac, and Linux.
+
+**Install Docker Desktop:**
+- [Download for Windows](https://www.docker.com/products/docker-desktop/)
+- [Download for Mac](https://www.docker.com/products/docker-desktop/)
+- [Download for Linux](https://docs.docker.com/desktop/install/linux-install/)
+
+  - **Windows users:** During installation, if asked, enable WSL2 (Windows Subsystem for Linux). This is required for Docker to work on Windows. [WSL2 install guide](https://aka.ms/wslinstall)
+  - **Mac users:** No WSL2 needed. Just install Docker Desktop for Mac.
+  - **Linux users:** Follow the Linux instructions above.
+
+After installing Docker Desktop, restart your computer if prompted, then open Docker Desktop to make sure it is running (look for the whale icon in your system tray or menu bar).
+
+---
+
+#### Advanced/Alternative: Local Python Setup (Not Recommended)
+
+If you are an advanced user and prefer to run the app without Docker, you need Python 3.10 or higher. [Download Python](https://www.python.org/downloads/)
+
+See the end of this README for alternative setup instructions.
 
 ### Quick Setup with Docker (Recommended)
 
@@ -25,6 +45,8 @@ A lightweight e-commerce application built with Flask, demonstrating core online
 The application will be available at `http://localhost:5000`
 
 **Note:** If you are on Windows, ensure WSL2 is installed and Docker Desktop is running with WSL2 integration enabled. If you see errors about the Docker Linux Engine or WSL, follow the prompts to install or enable WSL2, then restart Docker Desktop.
+
+Visit `http://localhost:5000` in your browser to see the application.
 
 #### Using Sample Data with Docker
 To add sample data to your Docker container:
@@ -65,7 +87,6 @@ docker-compose exec web python seed_db.py
    python app.py
    ```
 
-Visit `http://localhost:5000` in your browser to see the application.
 
 ## 📱 Features
 
