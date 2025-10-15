@@ -22,13 +22,6 @@ A lightweight e-commerce application built with Flask, demonstrating core online
 After installing Docker Desktop, restart your computer if prompted, then open Docker Desktop to make sure it is running (look for the whale icon in your system tray or menu bar).
 
 ---
-
-#### Advanced/Alternative: Local Python Setup (Not Recommended)
-
-If you are an advanced user and prefer to run the app without Docker, you need Python 3.10 or higher. [Download Python](https://www.python.org/downloads/)
-
-See the end of this README for alternative setup instructions.
-
 ### Quick Setup with Docker (Recommended)
 
 1. Clone the repository:
@@ -53,6 +46,12 @@ To add sample data to your Docker container:
 ```bash
 docker-compose exec web python seed_db.py
 ```
+---
+#### Advanced/Alternative: Local Python Setup (Not Recommended)
+
+If you are an advanced user and prefer to run the app without Docker, you need Python 3.10 or higher. [Download Python](https://www.python.org/downloads/)
+
+See the end of this README for alternative setup instructions.
 
 ### Alternative: Local Setup without Docker
 
@@ -193,12 +192,13 @@ docker-compose exec web python seed_db.py
 - Data persists between container restarts
 - To reset data, remove the volume with `docker-compose down -v`
 
+<!-- This is irrelevant for now
 ## ❗ Known Issues / TODOs
 
 - Product management needs admin role implementation
 - Cart data is session-based (not persistent)
 - No automated tests yet
-- Manual database migrations
+- Manual database migrations -->
 
 ## 📚 Additional Resources
 
