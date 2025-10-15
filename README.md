@@ -47,7 +47,7 @@ To add sample data to your Docker container:
 docker-compose exec web python seed_db.py
 ```
 ---
-#### Advanced/Alternative: Local Python Setup (Not Recommended)
+## Advanced/Alternative: Local Python Setup (Not Recommended)
 
 If you are an advanced user and prefer to run the app without Docker, you need Python 3.10 or higher. [Download Python](https://www.python.org/downloads/)
 
