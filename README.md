@@ -5,9 +5,9 @@ A lightweight e-commerce application built with Flask, demonstrating core online
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Docker and Docker Compose
+- Docker and Docker Compose (with WSL2 enabled on Windows)
   OR
-- Python 3.8 or higher with pip
+- Python 3.10 or higher with pip
 
 ### Quick Setup with Docker (Recommended)
 
@@ -18,11 +18,13 @@ A lightweight e-commerce application built with Flask, demonstrating core online
    ```
 
 2. Build and start the application:
-   ```bash
-   docker-compose up --build
-   ```
+  ```bash
+  docker-compose up --build
+  ```
 
 The application will be available at `http://localhost:5000`
+
+**Note:** If you are on Windows, ensure WSL2 is installed and Docker Desktop is running with WSL2 integration enabled. If you see errors about the Docker Linux Engine or WSL, follow the prompts to install or enable WSL2, then restart Docker Desktop.
 
 #### Using Sample Data with Docker
 To add sample data to your Docker container:
@@ -45,7 +47,7 @@ docker-compose exec web python seed_db.py
 
 2. Install dependencies:
    ```bash
-   pip install -r requirements.txt
+  pip install -r requirements.txt
    ```
 
 3. Initialize the database:
@@ -91,6 +93,10 @@ Visit `http://localhost:5000` in your browser to see the application.
 ```
 
 ## 💻 Development Guide
+
+### Flask Environment Variables
+
+- As of Flask 2.3+, `FLASK_ENV` is deprecated. This project uses `FLASK_DEBUG=0` for production mode in Docker. You may set `FLASK_DEBUG=1` for development mode.
 
 ### Database Models
 
@@ -139,6 +145,13 @@ Visit `http://localhost:5000` in your browser to see the application.
 4. Submit a pull request
 
 ## 🐳 Docker Development
+
+### Troubleshooting Docker on Windows
+
+- If you encounter errors related to WSL2 or the Docker Linux Engine, ensure:
+  - WSL2 is installed (`wsl -l -v` should show a running distro)
+  - Docker Desktop is running and set to use WSL2
+  - Restart Docker Desktop after any WSL2 changes
 
 ### Common Docker Commands
 

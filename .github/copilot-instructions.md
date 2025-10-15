@@ -19,13 +19,21 @@ This is a Flask-based simple web shop application that demonstrates core e-comme
 
 ## Development Workflow
 
+
 ### Environment Setup
 ```bash
+# Python 3.10 or higher is required
 pip install -r requirements.txt
 python create_db.py  # Initialize database
 python seed_db.py    # (Optional) Add sample data
 python app.py        # Run development server
 ```
+
+### Flask Environment Variables
+- As of Flask 2.3+, use `FLASK_DEBUG` instead of `FLASK_ENV`.
+
+### Docker/WSL2 Troubleshooting (Windows)
+- Ensure WSL2 is installed and Docker Desktop is running with WSL2 integration. If you see errors about the Docker Linux Engine or WSL, install/enable WSL2 and restart Docker Desktop.
 
 ### Database Operations
 - SQLite database file is created at `instance/shop.db`

@@ -1,4 +1,4 @@
-FROM python:3.8-slim
+FROM python:3.10-slim
 
 WORKDIR /app
 
@@ -20,7 +20,7 @@ VOLUME /app/instance
 
 # Set environment variables
 ENV FLASK_APP=app.py
-ENV FLASK_ENV=production
+ENV FLASK_DEBUG=0
 ENV SECRET_KEY="change-me-in-production"
 
 # Initialize the database
