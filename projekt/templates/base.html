@@ -6,18 +6,10 @@
 
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 
-  <style>
-    body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; }
-    header { display:flex; justify-content:space-between; align-items:center; }
-    nav a { margin-right: 10px; }
-    .flash { background:#ffd; padding:8px; margin:8px 0; border:1px solid #cca; }
-    table { width:100%; border-collapse: collapse; margin-top:12px; }
-    table th, table td { border:1px solid #ddd; padding:8px; }
-  </style>
 </head>
 <body>
   <header>
-    <div><h1><a href="{{ url_for('index') }}">Simple Web Shop</a></h1></div>
+    <div><h1><a href="{{ url_for('index') }}">Bikes & Strikes</a></h1></div>
     <nav>
       <a href="{{ url_for('index') }}">Products</a>
       <a href="{{ url_for('product_new') }}">Add Product</a>

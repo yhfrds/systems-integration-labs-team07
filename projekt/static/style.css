@@ -1,212 +1,202 @@
- body {
-      font-family: Arial, sans-serif;
-      background-color: #f5f5f5;
-      margin: 0;
-      padding: 20px;
-    }
-    h1 {
-      text-align: center;
-    }
-    .product-container {
-      display: flex;
-      justify-content: center;
-      gap: 20px;
-      flex-wrap: wrap;
-    }
-    .product {
-      background-color: #fff;
-      border-radius: 10px;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-      width: 250px;
-      padding: 15px;
-      text-align: center;
-    }
-    .product img {
-      width: 100%;
-      border-radius: 10px;
-    }
-    .product h2 {
-      font-size: 18px;
-      margin: 10px 0;
-    }
-    .product p {
-      color: #555;
-    }
-    .product button {
-      background-color: #1d6861;
-      color: rgb(255, 255, 255);
-      border: none;
-      padding: 10px 15px;
-      border-radius: 5px;
-      cursor: pointer;
-      transition: background-color 0.3s;
-    }
-    .product button:hover {
-      background-color: #000000;
-    }
-    /* --- THE TRIGGER BUTTON --- */
-#basket-trigger {
-    /* Position fixed so it stays in the corner */
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    
-    /* Style for a small, round button */
-    padding: 10px 15px; 
-    font-size: 20px;
-    background-color: black;
-    color: white;
-    border: none;
-    border-radius: 50%; /* Makes it circular */
-    cursor: pointer;
-    z-index: 1001; /* Makes sure it's above everything */
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-}
-/* --- THE SLIDING PANEL --- */
-#basket-panel {
-    /* Fixed position to cover the right side of the screen */
-    position: fixed;
-    top: 0;
-    right: 0;
-    width: 300px; /* Adjust for desired width of the basket */
-    height: 100%;
-    
-    /* Background and header styles */
-    background-color: #f8f8f8; /* Light background for the panel */
-    border-left: 1px solid #ddd;
-    box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
-    
-    /* Hide the panel off-screen to the right */
-    transform: translateX(100%); 
-    
-    /* Smooth transition for the sliding effect */
-    transition: transform 0.4s ease-out;
-    z-index: 1000;
-    padding: 20px;
-}
-        /* --- THE ACTIVE/VISIBLE STATE --- */
-#basket-panel.open {
-    /* Move the panel back into view */
-    transform: translateX(0);
-}
-/* Style the new placeholder container */
-.add-product-card {
-    /* Match the size and layout of your existing product cards */
-    width: 300px; /* Adjust this to match your card width */
-    padding: 20px;
-    margin: 20px;
-    
-    /* Center the contents */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    
-    /* Visual styling */
-    border: 2px dashed #aaa; /* Dashed border to show it's a placeholder */
-    border-radius: 10px;
-    background-color: #f8f8f8;
-    cursor: pointer;
-    
-    /* Define the height to match your existing cards */
-    height: 450px; /* You may need to adjust this to visually match your cards */
-}
-/* Style the big plus sign */
-.plus-icon {
-    font-size: 80px; /* Make the plus sign large */
-    color: #888;
-    font-weight: 300; /* Use a lighter weight for a modern look */
-    line-height: 1; /* Helps with vertical centering */
+/* --- Globale Stile & Typografie --- */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  background-color: #f8f9fa; /* Heller, neutraler Hintergrund */
+  color: #212529; /* Dunkler Text für besseren Kontrast */
+  line-height: 1.6;
+  margin: 0;
+  padding: 20px;
 }
 
-/* Optional: Add a subtle hover effect */
-.add-product-card:hover {
-    background-color: #eee;
-    border-color: #666;
-}
-/* Style for the new header panel */
-.top-nav {
-    /* Use Flexbox for alignment */
-    display: flex;
-    /* This key property pushes the items to opposite ends */
-    justify-content: space-between; 
-    align-items: center; /* Vertically center the text and button */
-    
-    /* Panel styling */
-    width: 100%;
-    padding: 15px 40px; /* Padding for top/bottom and left/right */
-    background-color: white; 
-    border-bottom: 1px solid #ddd; /* Subtle separation line */
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); /* Soft shadow */
-    
-    /* Ensure the header stays at the top if you scroll */
-    position: sticky;
-    top: 0;
-    z-index: 999;
+/* --- Container & Layout --- */
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  background-color: #ffffff; /* Weißer Hintergrund für den Inhaltsbereich */
+  padding: 30px 40px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
-/* Style for the title */
-.nav-title {
-    /* Reset margin so it aligns nicely in the flex container */
-    margin: 0;
-    font-size: 24px;
-    color: #333;
-    font-weight: bold;
+h1, h2, h3 {
+  color: #343a40;
+  margin-top: 0;
 }
 
-/* Style for the Register Button */
-.register-button {
-    background-color: #007bff; /* Blue call-to-action color */
-    color: white;
-    padding: 10px 20px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: background-color 0.3s;
+a {
+  color: #007bff; /* Standard-Blau für Links */
+  text-decoration: none;
+  transition: color 0.2s;
 }
 
-.register-button:hover {
-    background-color: #0056b3;
+a:hover {
+  color: #0056b3;
+  text-decoration: underline;
 }
 
-/* --- Styles for Forms --- */
-.form-container {
-  max-width: 500px;
-  margin: 40px auto;
-  padding: 30px;
-  background-color: #fff;
-  border-radius: 10px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+/* --- Header & Navigation --- */
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #dee2e6;
 }
-.form-container h2 {
-  text-align: center;
-  margin-bottom: 25px;
+
+header h1 {
+  margin: 0;
+  font-size: 28px;
 }
-.form-container label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: bold;
+
+header h1 a {
+  color: #212529;
+  text-decoration: none;
 }
-.form-container input,
-.form-container textarea {
+
+header nav a {
+  margin-left: 18px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* --- Tabellen --- */
+table {
   width: 100%;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  margin-bottom: 20px;
-  box-sizing: border-box; /* Important */
+  border-collapse: collapse;
+  margin-top: 20px;
 }
-.form-container button {
+
+table th, table td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid #dee2e6; /* Nur horizontale Linien */
+}
+
+table th {
+  background-color: #f8f9fa; /* Leichter Hintergrund für Header */
+  font-weight: 600;
+  color: #495057;
+}
+
+/* Letzte Zeile ohne Border */
+table tr:last-child td {
+  border-bottom: none;
+}
+
+/* --- Formulare & Buttons --- */
+form {
+  margin-top: 20px;
+}
+
+form label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: #495057;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+textarea {
   width: 100%;
   padding: 12px;
-  background-color: #1d6861;
+  border: 1px solid #ced4da;
+  border-radius: 8px;
+  box-sizing: border-box; /* Wichtig für korrekte Breitenberechnung */
+  font-size: 16px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input:focus, textarea:focus {
+  outline: none;
+  border-color: #80bdff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+button[type="submit"] {
+  background-color: #007bff;
   color: white;
   border: none;
-  border-radius: 5px;
-  cursor: pointer;
+  padding: 12px 20px;
+  border-radius: 8px;
   font-size: 16px;
-  transition: background-color 0.3s;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  display: inline-block;
+  margin-top: 10px;
 }
-.form-container button:hover {
-  background-color: #000000;
+
+button[type="submit"]:hover {
+  background-color: #0056b3;
+  transform: translateY(-1px); /* Leichter Schwebe-Effekt */
 }
+
+/* Spezifische Button-Stile */
+/* "Delete" / "Remove" Buttons in Rot */
+form[action*="delete"] button,
+form[action*="remove"] button {
+    background-color: #dc3545;
+}
+form[action*="delete"] button:hover,
+form[action*="remove"] button:hover {
+    background-color: #c82333;
+}
+
+/* Inline-Formulare (z.B. für "Add to cart" und "Delete" in der Produktliste) */
+form[style*="display:inline"] {
+  display: inline;
+  margin-top: 0;
+}
+
+form[style*="display:inline"] button {
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+form[style*="display:inline"] input[type="number"] {
+  width: 70px;
+  padding: 8px;
+  margin-right: 5px;
+}
+
+
+/* --- Flash-Nachrichten --- */
+.flash {
+  padding: 15px;
+  margin-bottom: 20px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background-color: #fff3cd; /* Gelblicher Hintergrund für Hinweise */
+  border-color: #ffeeba;
+  color: #856404;
+}
+
+/* --- Footer --- */
+footer {
+  margin-top: 40px;
+  font-size: 14px;
+  color: #6c757d; /* Helleres Grau für den Footer-Text */
+  text-align: center;
+}
+
+footer hr {
+  border: 0;
+  border-top: 1px solid #dee2e6;
+  margin-bottom: 20px;
+}
+
+body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; }
+    header { display:flex; justify-content:space-between; align-items:center; }
+    nav a { margin-right: 10px; }
+    .flash { background:#ffd; padding:8px; margin:8px 0; border:1px solid #cca; }
+    table { width:100%; border-collapse: collapse; margin-top:12px; }
+    table th, table td { border:1px solid #ddd; padding:8px; }
