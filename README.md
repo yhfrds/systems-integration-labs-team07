@@ -21,7 +21,6 @@ A lightweight e-commerce application built with Flask, demonstrating core online
 
 After installing Docker Desktop, restart your computer if prompted, then open Docker Desktop to make sure it is running (look for the whale icon in your system tray or menu bar).
 
----
 ### Quick Setup with Docker (Recommended)
 
 1. Clone the repository:
@@ -47,7 +46,7 @@ To add sample data to your Docker container:
 docker-compose exec web python seed_db.py
 ```
 ---
-## Advanced/Alternative: Local Python Setup (Not Recommended)
+## 🔹 Advanced/Alternative: Local Python Setup (Not Recommended)
 
 If you are an advanced user and prefer to run the app without Docker, you need Python 3.10 or higher. [Download Python](https://www.python.org/downloads/)
 
