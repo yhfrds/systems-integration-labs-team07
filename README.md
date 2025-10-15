@@ -18,9 +18,9 @@ A lightweight e-commerce application built with Flask, demonstrating core online
    ```
 
 2. Build and start the application:
-  ```bash
-  docker-compose up --build
-  ```
+   ```bash
+   docker-compose up --build
+   ```
 
 The application will be available at `http://localhost:5000`
 
@@ -47,7 +47,7 @@ docker-compose exec web python seed_db.py
 
 2. Install dependencies:
    ```bash
-  pip install -r requirements.txt
+   pip install -r requirements.txt
    ```
 
 3. Initialize the database:
