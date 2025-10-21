@@ -1,11 +1,16 @@
 # projekt/routes.py
 
+# --- BEREINIGTE IMPORT-SEKTION ---
+# Alle Importe sind hier zusammengefasst
 from flask import render_template, request, redirect, url_for, flash, session, abort
 from flask_login import login_user, logout_user, login_required, current_user
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+import csv  # Für den Datei-Import
+import io   # Für den Datei-Import
 
 from . import app, db  # Importiert app und db aus __init__.py
 from .models import User, Product, Order, OrderItem
+# --- ENDE DER IMPORTE ---
 
 
 # Helper: cart operations (stored in session)
@@ -28,7 +33,6 @@ def index():
 
 @app.route('/product/new', methods=['GET', 'POST'])
 def product_new():
-    # ... (Code für product_new kopieren)
     if request.method == 'POST':
         name = request.form['name'].strip()
         desc = request.form.get('description', '').strip()
@@ -47,7 +51,6 @@ def product_new():
 
 @app.route('/product/<int:product_id>/delete', methods=['POST'])
 def product_delete(product_id):
-    # ... (Code für product_delete kopieren)
     p = Product.query.get_or_404(product_id)
     db.session.delete(p)
     db.session.commit()
@@ -57,7 +60,6 @@ def product_delete(product_id):
 # --- Auth & User Routes ---
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    # ... (Code für register kopieren)
     if request.method == 'POST':
         name = request.form['name'].strip()
         email = request.form['email'].strip().lower()
@@ -77,7 +79,6 @@ def register():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # ... (Code für login kopieren)
     if request.method == 'POST':
         email = request.form['email'].strip().lower()
         password = request.form['password']
@@ -93,7 +94,6 @@ def login():
 @app.route('/logout')
 @login_required
 def logout():
-    # ... (Code für logout kopieren)
     logout_user()
     flash('Logged out')
     return redirect(url_for('index'))
@@ -147,7 +147,6 @@ def profile():
 # --- Cart & Order Routes ---
 @app.route('/cart/add/<int:product_id>', methods=['POST'])
 def cart_add(product_id):
-    # ... (Code für cart_add kopieren)
     product = Product.query.get_or_404(product_id)
     cart = get_cart()
     qty = int(request.form.get('quantity', 1))
@@ -160,7 +159,6 @@ def cart_add(product_id):
 
 @app.route('/cart')
 def cart_view():
-    # ... (Code für cart_view kopieren)
     cart = get_cart()
     items = []
     total = Decimal('0.00')
@@ -176,7 +174,6 @@ def cart_view():
 
 @app.route('/cart/remove/<int:product_id>', methods=['POST'])
 def cart_remove(product_id):
-    # ... (Code für cart_remove kopieren)
     cart = get_cart()
     cart.pop(str(product_id), None)
     save_cart(cart)
@@ -186,7 +183,6 @@ def cart_remove(product_id):
 @app.route('/checkout', methods=['POST'])
 @login_required
 def checkout():
-    # ... (Code für checkout kopieren)
     cart = get_cart()
     if not cart:
         flash('Cart is empty')
@@ -217,7 +213,6 @@ def checkout():
 @app.route('/orders')
 @login_required
 def orders():
-    # ... (Code für orders kopieren)
     my_orders = Order.query.filter_by(
         user_id=current_user.id).order_by(Order.created_at.desc()).all()
     return render_template('orders.html', orders=my_orders)
@@ -225,7 +220,6 @@ def orders():
 @app.route('/order/<int:order_id>')
 @login_required
 def order_detail(order_id):
-    # ... (Code für order_detail kopieren)
     o = Order.query.get_or_404(order_id)
     if o.user_id != current_user.id:
         abort(403)
@@ -233,7 +227,6 @@ def order_detail(order_id):
 
 @app.route('/order/<int:order_id>/status', methods=['POST'])
 def change_status(order_id):
-    # ... (Code für change_status kopieren)
     new_status = request.form.get('status')
     o = Order.query.get_or_404(order_id)
     if new_status not in ('pending', 'shipped', 'completed'):
@@ -243,3 +236,125 @@ def change_status(order_id):
         db.session.commit()
         flash('Order status updated')
     return redirect(url_for('index'))
+
+
+# --- NEUE ROUTE FÜR "ON-DEMAND" FILE-IMPORT (gemäß Aufgabenstellung) ---
+@app.route('/admin/import-products', methods=['GET', 'POST'])
+@login_required # <-- Sicherheit!
+def import_products():
+    
+    # --- 1. POST: Datei wird hochgeladen & verarbeitet ---
+    if request.method == 'POST':
+        if 'product_file' not in request.files:
+            flash('Keine Datei im Request gefunden.')
+            return redirect(request.url)
+        
+        file = request.files['product_file']
+        
+        if file.filename == '':
+            flash('Keine Datei ausgewählt.')
+            return redirect(request.url)
+        
+        if not file or not file.filename.lower().endswith('.csv'):
+            flash('Fehler: Es werden nur .csv-Dateien akzeptiert.')
+            return redirect(request.url)
+
+        # --- 2. CSV-Datei einlesen ---
+        created_count = 0
+        updated_count = 0
+        error_count = 0
+        errors = []
+        
+        try:
+            # Datei als Text im Speicher lesen
+            # 'utf-8-sig' verwenden, um ein mögliches BOM (Byte Order Mark) zu ignorieren
+            stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
+            csv_reader = csv.DictReader(stream)
+
+            # --- 3. Datenbank-Synchronisierung ---
+            for row in csv_reader:
+                try:
+                    # PASSEN SIE DIESE FELDNAMEN AN IHRE CSV-SPALTEN AN
+                    # (z.B. 'productID', 'name', 'description', 'price')
+                    erp_id = str(row['productID']) 
+                    name = row['name']
+                    description = row.get('description', '')
+                    
+                    # --- BEREINIGUNG FÜR DEN "X null" FEHLER ---
+                    price_str_raw = row.get('price', '0') # Holt den Roh-String, z.B. "3 null" oder "9.99"
+
+                    if price_str_raw:
+                        # Entfernt das unerwünschte " null" und Leerzeichen
+                        price_str = price_str_raw.replace(" null", "").strip()
+                    else:
+                        price_str = "0" # Falls der String 'None' war
+
+                    if not price_str: # Fängt leere Strings "" ab (falls nur " null" drin war)
+                        price = Decimal('0.00')
+                    else:
+                        price = Decimal(price_str) # Konvertiert den bereinigten String, z.B. "3"
+                    # --- ENDE DER BEREINIGUNG ---
+
+                    if not erp_id or not name:
+                        errors.append(f"Überspringe Zeile ohne productID oder Name: {row}")
+                        error_count += 1
+                        continue
+                    
+                    # Upsert-Logik
+                    product = Product.query.filter_by(erp_id=erp_id).first()
+                    
+                    if product:
+                        # UPDATE
+                        product.name = name
+                        product.description = description
+                        product.price = price
+                        updated_count += 1
+                    else:
+                        # CREATE
+                        product = Product(
+                            erp_id=erp_id,
+                            name=name,
+                            description=description,
+                            price=price
+                        )
+                        db.session.add(product)
+                        created_count += 1
+                
+                # --- 4. Übersetztes Error Handling ---
+                except InvalidOperation:
+                    product_id = row.get('productID', 'Unbekannt')
+                    invalid_price = str(row.get('price', 'LEER'))
+                    errors.append(
+                        f"Fehler bei Produkt-ID '{product_id}': "
+                        f"Der Preis '{invalid_price}' ist ungültig. "
+                    )
+                    error_count += 1
+                except KeyError as e:
+                    # Fängt Fehler ab, wenn eine Spalte fehlt (z.B. 'productID' nicht gefunden)
+                    errors.append(f"Fehler: Die Spalte {e} fehlt in der CSV-Datei.")
+                    error_count += 1
+                    # Bei einem Spaltenfehler ist die ganze Datei unbrauchbar, daher Abbruch
+                    break 
+                except Exception as e:
+                    product_id = row.get('productID', 'Unbekannt')
+                    errors.append(f"Allgemeiner Fehler bei ID '{product_id}': {str(e)}")
+                    error_count += 1
+
+        except Exception as e:
+            flash(f'Kritischer Fehler beim Lesen der Datei: {e}')
+            return redirect(url_for('import_products'))
+
+        # --- 5. Änderungen speichern & Feedback ---
+        if error_count > 0:
+            db.session.rollback()
+            # Zeige nur die ersten 3 Fehler an, um die UI nicht zu überfluten
+            error_preview = "; ".join(errors[:3])
+            flash(f'Import fehlgeschlagen mit {error_count} Fehlern. Keine Änderungen gespeichert. (Vorschau: {error_preview})')
+        else:
+            db.session.commit()
+            flash(f'Import erfolgreich! {created_count} Produkte erstellt, {updated_count} Produkte aktualisiert.')
+        
+        return redirect(url_for('index'))
+
+    # --- 2. GET: Zeigt das Upload-Formular an ---
+    return render_template('import_form.html')

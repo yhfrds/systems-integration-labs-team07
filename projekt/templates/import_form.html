@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Import Products from ERP</h2>
+  <p>Lade hier die Export-Datei (CSV) aus dem ERP-System hoch.</p>
+  
+  <form method="post" enctype="multipart/form-data">
+    <label>Produkt-Datei (CSV):
+      <br/>
+      <input type="file" name="product_file" accept=".csv" required>
+    </label>
+    <br/><br/>
+    <button type="submit">Upload und Verarbeiten</button>
+  </form>
+{% endblock %}
