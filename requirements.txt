@@ -1,0 +1,5 @@
+# === Simple Web Shop Lab Requirements ===
+Flask==2.2.5
+Flask-Login==0.6.3
+Flask-SQLAlchemy==3.0.3
+Werkzeug==3.1.3

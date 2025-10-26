@@ -1,0 +1,202 @@
+/* --- Globale Stile & Typografie --- */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  background-color: #f8f9fa; /* Heller, neutraler Hintergrund */
+  color: #212529; /* Dunkler Text für besseren Kontrast */
+  line-height: 1.6;
+  margin: 0;
+  padding: 20px;
+}
+
+/* --- Container & Layout --- */
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  background-color: #ffffff; /* Weißer Hintergrund für den Inhaltsbereich */
+  padding: 30px 40px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+h1, h2, h3 {
+  color: #343a40;
+  margin-top: 0;
+}
+
+a {
+  color: #007bff; /* Standard-Blau für Links */
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+a:hover {
+  color: #0056b3;
+  text-decoration: underline;
+}
+
+/* --- Header & Navigation --- */
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+header h1 a {
+  color: #212529;
+  text-decoration: none;
+}
+
+header nav a {
+  margin-left: 18px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* --- Tabellen --- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+table th, table td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid #dee2e6; /* Nur horizontale Linien */
+}
+
+table th {
+  background-color: #f8f9fa; /* Leichter Hintergrund für Header */
+  font-weight: 600;
+  color: #495057;
+}
+
+/* Letzte Zeile ohne Border */
+table tr:last-child td {
+  border-bottom: none;
+}
+
+/* --- Formulare & Buttons --- */
+form {
+  margin-top: 20px;
+}
+
+form label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: #495057;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ced4da;
+  border-radius: 8px;
+  box-sizing: border-box; /* Wichtig für korrekte Breitenberechnung */
+  font-size: 16px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input:focus, textarea:focus {
+  outline: none;
+  border-color: #80bdff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+button[type="submit"] {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  display: inline-block;
+  margin-top: 10px;
+}
+
+button[type="submit"]:hover {
+  background-color: #0056b3;
+  transform: translateY(-1px); /* Leichter Schwebe-Effekt */
+}
+
+/* Spezifische Button-Stile */
+/* "Delete" / "Remove" Buttons in Rot */
+form[action*="delete"] button,
+form[action*="remove"] button {
+    background-color: #dc3545;
+}
+form[action*="delete"] button:hover,
+form[action*="remove"] button:hover {
+    background-color: #c82333;
+}
+
+/* Inline-Formulare (z.B. für "Add to cart" und "Delete" in der Produktliste) */
+form[style*="display:inline"] {
+  display: inline;
+  margin-top: 0;
+}
+
+form[style*="display:inline"] button {
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+form[style*="display:inline"] input[type="number"] {
+  width: 70px;
+  padding: 8px;
+  margin-right: 5px;
+}
+
+
+/* --- Flash-Nachrichten --- */
+.flash {
+  padding: 15px;
+  margin-bottom: 20px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background-color: #fff3cd; /* Gelblicher Hintergrund für Hinweise */
+  border-color: #ffeeba;
+  color: #856404;
+}
+
+/* --- Footer --- */
+footer {
+  margin-top: 40px;
+  font-size: 14px;
+  color: #6c757d; /* Helleres Grau für den Footer-Text */
+  text-align: center;
+}
+
+footer hr {
+  border: 0;
+  border-top: 1px solid #dee2e6;
+  margin-bottom: 20px;
+}
+
+body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; }
+    header { display:flex; justify-content:space-between; align-items:center; }
+    nav a { margin-right: 10px; }
+    .flash { background:#ffd; padding:8px; margin:8px 0; border:1px solid #cca; }
+    table { width:100%; border-collapse: collapse; margin-top:12px; }
+    table th, table td { border:1px solid #ddd; padding:8px; }
