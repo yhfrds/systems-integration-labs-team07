@@ -4,13 +4,13 @@ from flask import render_template, request, redirect, url_for, flash, session, a
 from flask_login import login_user, logout_user, login_required, current_user
 from decimal import Decimal
 
-# +++ NEUE IMPORTE FÜR ON-DEMAND-SYNC HINZUFÜGEN +++
+# +++ IMPORTE FÜR ON-DEMAND-SYNC +++
 import requests
 import csv
 import os
 from requests.auth import HTTPBasicAuth
 from datetime import datetime
-# +++ ENDE NEUE IMPORTE +++
+# +++ ENDE IMPORTE +++
 
 from . import app, db  # Importiert app und db aus __init__.py
 from .models import User, Product, Order, OrderItem
@@ -21,7 +21,7 @@ ERP_CSV_URL = 'http://localhost:4004/rest/api/getProducts'
 ERP_USERNAME = 'alice'  # Hier Anmeldedaten eintragen
 ERP_PASSWORD = 'alice'      # Hier Anmeldedaten eintragen
 ERP_IMPORTS_DIR = 'erp_imports'
-CSV_SAVE_FILENAME = 'erp_products_archive.csv'
+CSV_BASENAME = 'erp_products'  # Basisname für Archivdateien
 CSV_DELIMITER = ','
 CSV_PRICE_DECIMAL = '.'
 # --- ENDE KONFIGURATION ---
@@ -46,8 +46,8 @@ def index():
     return render_template('index.html', products=products, cart=get_cart())
 
 @app.route('/product/new', methods=['GET', 'POST'])
+@login_required 
 def product_new():
-    # ... (Code für product_new kopieren)
     if request.method == 'POST':
         name = request.form['name'].strip()
         desc = request.form.get('description', '').strip()
@@ -57,6 +57,11 @@ def product_new():
         except:
             flash('Invalid price format')
             return redirect(url_for('product_new'))
+        
+        if not name or price <= 0:
+             flash('Invalid name or price')
+             return redirect(url_for('product_new'))
+
         p = Product(name=name, description=desc, price=price)
         db.session.add(p)
         db.session.commit()
@@ -65,8 +70,8 @@ def product_new():
     return render_template('product_form.html')
 
 @app.route('/product/<int:product_id>/delete', methods=['POST'])
+@login_required 
 def product_delete(product_id):
-    # ... (Code für product_delete kopieren)
     p = Product.query.get_or_404(product_id)
     db.session.delete(p)
     db.session.commit()
@@ -76,7 +81,6 @@ def product_delete(product_id):
 # --- Auth & User Routes ---
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    # ... (Code für register kopieren)
     if request.method == 'POST':
         name = request.form['name'].strip()
         email = request.form['email'].strip().lower()
@@ -92,11 +96,10 @@ def register():
         login_user(u)
         flash('Registered and logged in')
         return redirect(url_for('index'))
-    return render_template('register.html')
+    return render_template('register.html') # Sie brauchen eine 'register.html' Vorlage
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # ... (Code für login kopieren)
     if request.method == 'POST':
         email = request.form['email'].strip().lower()
         password = request.form['password']
@@ -112,7 +115,6 @@ def login():
 @app.route('/logout')
 @login_required
 def logout():
-    # ... (Code für logout kopieren)
     logout_user()
     flash('Logged out')
     return redirect(url_for('index'))
@@ -121,38 +123,31 @@ def logout():
 @login_required
 def profile():
     if request.method == 'POST':
-        # Formulardaten abrufen
         name = request.form['name'].strip()
         address = request.form.get('address', '').strip()
         email = request.form['email'].strip().lower()
         current_password = request.form['current_password']
         new_password = request.form.get('new_password')
 
-        # 1. Aktuelles Passwort überprüfen
         if not current_user.check_password(current_password):
             flash('Incorrect current password. No changes were made.')
             return redirect(url_for('profile'))
 
-        # 2. Allgemeine Informationen aktualisieren
         current_user.name = name
         current_user.address = address
         update_made = True
 
-        # 3. E-Mail-Adresse aktualisieren (falls geändert)
         if current_user.email != email:
-            # Prüfen, ob die neue E-Mail bereits vergeben ist
             if User.query.filter(User.email == email, User.id != current_user.id).first():
                 flash('This email address is already in use by another account.')
                 return redirect(url_for('profile'))
             current_user.email = email
             update_made = True
 
-        # 4. Passwort aktualisieren (falls ein neues eingegeben wurde)
         if new_password:
             current_user.set_password(new_password)
             update_made = True
         
-        # 5. Änderungen in der Datenbank speichern
         if update_made:
             db.session.commit()
             flash('Profile updated successfully.')
@@ -161,12 +156,11 @@ def profile():
 
         return redirect(url_for('profile'))
         
-    return render_template('profile.html')
+    return render_template('profile.html') # Sie brauchen eine 'profile.html' Vorlage
 
 # --- Cart & Order Routes ---
 @app.route('/cart/add/<int:product_id>', methods=['POST'])
 def cart_add(product_id):
-    # ... (Code für cart_add kopieren)
     product = Product.query.get_or_404(product_id)
     cart = get_cart()
     qty = int(request.form.get('quantity', 1))
@@ -179,7 +173,6 @@ def cart_add(product_id):
 
 @app.route('/cart')
 def cart_view():
-    # ... (Code für cart_view kopieren)
     cart = get_cart()
     items = []
     total = Decimal('0.00')
@@ -191,11 +184,10 @@ def cart_view():
         subtotal = (p.price * qty)
         items.append({'product': p, 'quantity': qty, 'subtotal': subtotal})
         total += subtotal
-    return render_template('cart.html', items=items, total=total)
+    return render_template('cart.html', items=items, total=total) # Sie brauchen 'cart.html'
 
 @app.route('/cart/remove/<int:product_id>', methods=['POST'])
 def cart_remove(product_id):
-    # ... (Code für cart_remove kopieren)
     cart = get_cart()
     cart.pop(str(product_id), None)
     save_cart(cart)
@@ -205,7 +197,6 @@ def cart_remove(product_id):
 @app.route('/checkout', methods=['POST'])
 @login_required
 def checkout():
-    # ... (Code für checkout kopieren)
     cart = get_cart()
     if not cart:
         flash('Cart is empty')
@@ -236,23 +227,21 @@ def checkout():
 @app.route('/orders')
 @login_required
 def orders():
-    # ... (Code für orders kopieren)
     my_orders = Order.query.filter_by(
         user_id=current_user.id).order_by(Order.created_at.desc()).all()
-    return render_template('orders.html', orders=my_orders)
+    return render_template('orders.html', orders=my_orders) # Sie brauchen 'orders.html'
 
 @app.route('/order/<int:order_id>')
 @login_required
 def order_detail(order_id):
-    # ... (Code für order_detail kopieren)
     o = Order.query.get_or_404(order_id)
     if o.user_id != current_user.id:
-        abort(403)
-    return render_template('order_detail.html', order=o)
+        abort(43)
+    return render_template('order_detail.html', order=o) # Sie brauchen 'order_detail.html'
 
 @app.route('/order/<int:order_id>/status', methods=['POST'])
+@login_required
 def change_status(order_id):
-    # ... (Code für change_status kopieren)
     new_status = request.form.get('status')
     o = Order.query.get_or_404(order_id)
     if new_status not in ('pending', 'shipped', 'completed'):
@@ -261,33 +250,36 @@ def change_status(order_id):
         o.status = new_status
         db.session.commit()
         flash('Order status updated')
-    return redirect(url_for('index'))
+    return redirect(url_for('orders'))
 
 
-# +++ NEUE ON-DEMAND SYNC ROUTE +++
+# +++ (GEMERGT) ON-DEMAND SYNC ROUTE (MIT TIMESTAMP & ROBUSTEM ERROR HANDLING) +++
 @app.route('/admin/sync', methods=['GET', 'POST'])
 @login_required
 def admin_sync():
     """
     Zeigt die Admin-Sync-Seite (GET) und führt den 
     On-Demand-Sync (POST) aus.
-    Geschützt durch @login_required (jeder eingeloggte Benutzer).
+    Erstellt bei jedem Sync eine neue CSV-Datei mit Zeitstempel.
     """
 
     if request.method == 'POST':
         # --- START SYNC-LOGIK ---
         print(f"[{datetime.now()}] Starte manuellen ERP-CSV-Sync...")
         
-        # --- TEIL 0: SPEICHERPFAD DEFINIEREN ---
+        # --- TEIL 0: SPEICHERPFAD DEFINIEREN (ANGEPASST MIT TIMESTAMP) ---
         try:
-            # app.root_path ist der 'projekt' Ordner
-            base_dir = os.path.dirname(app.root_path) # Geht eine Ebene hoch
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            new_filename = f"{CSV_BASENAME}_{timestamp}.csv"
+            base_dir = os.path.dirname(app.root_path) 
             imports_dir_path = os.path.join(base_dir, ERP_IMPORTS_DIR)
             os.makedirs(imports_dir_path, exist_ok=True) 
-            csv_save_path = os.path.join(imports_dir_path, CSV_SAVE_FILENAME) 
+            csv_save_path = os.path.join(imports_dir_path, new_filename) 
+        
         except Exception as e:
             flash(f"Fehler beim Erstellen des Ordner-Pfads: {e}")
             return redirect(url_for('admin_sync'))
+        # --- ENDE TEIL 0 ---
 
         # --- TEIL 1: CSV-Datei herunterladen und speichern ---
         try:
@@ -298,6 +290,7 @@ def admin_sync():
                 auth=HTTPBasicAuth(ERP_USERNAME, ERP_PASSWORD)
             )
             csv_response.raise_for_status() 
+            
             with open(csv_save_path, 'w', encoding='utf-8', newline='') as f:
                 f.write(csv_response.text)
             print(f"Erfolgreich: CSV-Archiv gespeichert unter {csv_save_path}")
@@ -308,6 +301,8 @@ def admin_sync():
         except requests.exceptions.RequestException as e:
             if "401" in str(e):
                  flash(f"Fehler (CSV): Authentifizierung fehlgeschlagen (401). Bitte ERP_USERNAME und ERP_PASSWORD im Skript prüfen.")
+            elif "403" in str(e):
+                flash(f"Fehler (CSV): Berechtigung fehlt (403). Der ERP-Benutzer darf die Datei nicht herunterladen.")
             else:
                  flash(f"Fehler (CSV): Beim Download der CSV-Datei: {e}.")
             return redirect(url_for('admin_sync'))
@@ -324,24 +319,60 @@ def admin_sync():
 
         try:
             with open(csv_save_path, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f, delimiter=CSV_DELIMITER) 
                 
-                for row in reader:
+                # +++ NEU: Spezifisches Error Handling für CSV-Format +++
+                try:
+                    # Lese die erste Zeile (Header)
+                    header = f.readline()
+                    
+                    # Minimale Header-Validierung: Prüfen, ob die wichtigsten Spalten da sind
+                    if 'productID' not in header or 'name' not in header or 'price' not in header:
+                        # Dies ist ein Formatfehler, kein CSV
+                        raise csv.Error("CSV-Header-Validierung fehlgeschlagen. Wichtige Spalten fehlen.")
+                    
+                    # Dateizeiger zurücksetzen, um die Datei normal einzulesen
+                    f.seek(0)
+                    reader = csv.DictReader(f, delimiter=CSV_DELIMITER)
+                    
+                    rows_to_process = list(reader) # Lese alle Zeilen zuerst
+                
+                except csv.Error as e:
+                    # Dieser Fehler tritt auf, wenn die Datei kein CSV ist oder die Header fehlen
+                    flash(f"Fehler (Format): Die vom ERP empfangene Datei ist keine gültige CSV-Datei. Details: {e}", 'danger')
+                    return redirect(url_for('admin_sync'))
+                # +++ ENDE NEU +++
+
+                # Jetzt die Zeilen verarbeiten
+                for row in rows_to_process:
                     try:
-                        # Angepasst an die Spaltennamen Ihrer CSV
                         erp_id = row.get('productID')
                         name = row.get('name')
-                        price_raw = row.get('price')
+                        price_raw = row.get('price') # z.B. "2500 EUR"
                         description_raw = row.get('description')
                         
                         if not erp_id or not name or price_raw is None:
-                            print(f"Übersprungen: Unvollständige Daten in Zeile: {row}")
+                            print(f"Übersprungen (Fehlende Felder): Unvollständige Daten in Zeile: {row}")
                             errors_count += 1
                             continue
                         
-                        # Datenbereinigung
-                        price_str_clean = str(price_raw).replace(' null', '').strip()
-                        price = Decimal(price_str_clean)
+                        # --- DATENBEREINIGUNG (BEIBEHALTEN VOM ORIGINALCODE) ---
+                        
+                        # 1. Trennt "2500 EUR" (oder "3 null") am Leerzeichen
+                        price_str_clean = str(price_raw).split(' ')[0] 
+                        
+                        # 2. Entfernt ' null' (falls es "3 null" statt "3 EUR" war)
+                        price_str_clean = price_str_clean.replace(' null', '').strip() 
+                        
+                        # +++ NEU: Robustere Preis-Umwandlung +++
+                        try:
+                            price = Decimal(price_str_clean)
+                        except Exception:
+                            print(f"Übersprungen (Typ-Fehler): Ungültiges Preisformat '{price_str_clean}' in Zeile {row}")
+                            errors_count += 1
+                            continue # Diese Zeile überspringen
+                        # +++ ENDE NEU +++
+                        # --- ENDE DATENBEREINIGUNG ---
+
                         description = description_raw if description_raw and str(description_raw) != 'NaN' else ''
                         erp_id_str = str(erp_id)
                         erp_ids_from_sync.add(erp_id_str)
@@ -372,17 +403,17 @@ def admin_sync():
 
             # --- TEIL 4: Änderungen in die DB schreiben ---
             db.session.commit()
-            flash(f"ERP-Sync erfolgreich! Erstellt: {created_count}, Aktualisiert: {updated_count}, Gelöscht: {deleted_count}, Fehler: {errors_count}", 'success')
+            flash(f"ERP-Sync erfolgreich! Erstellt: {created_count}, Aktualisiert: {updated_count}, Gelöscht: {deleted_count}, Fehler/Übersprungen: {errors_count}", 'success')
 
         except FileNotFoundError:
-             flash(f"Fehler: Die Datei {csv_save_path} wurde nicht gefunden.")
+             flash(f"Fehler: Die Datei {csv_save_path} wurde nicht gefunden.", 'danger')
         except Exception as e:
             db.session.rollback()
-            flash(f"Fehler (CSV) beim Einlesen der Datei oder DB-Update: {e}")
+            flash(f"Unerwarteter Fehler (CSV) beim Einlesen der Datei oder DB-Update: {e}", 'danger')
         
         # --- ENDE SYNC-LOGIK ---
         
         return redirect(url_for('admin_sync'))
 
     # GET Request: Zeige einfach die Admin-Seite mit dem Button an
-    return render_template('admin_sync.html')
+    return render_template('admin_sync.html') # Sie brauchen 'admin_sync.html'

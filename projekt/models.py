@@ -23,11 +23,11 @@ class User(db.Model, UserMixin):
 
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    # NEUE SPALTE für die ID aus dem ERP-System
     erp_id = db.Column(db.String(100), unique=True, nullable=True, index=True) 
     name = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, default='')
     price = db.Column(db.Numeric(10, 2), nullable=False)
+    currency = db.Column(db.String(5), default='EUR')
 
 
 class Order(db.Model):
