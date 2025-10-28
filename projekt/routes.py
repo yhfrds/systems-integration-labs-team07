@@ -4,8 +4,27 @@ from flask import render_template, request, redirect, url_for, flash, session, a
 from flask_login import login_user, logout_user, login_required, current_user
 from decimal import Decimal
 
+# +++ NEUE IMPORTE FÜR ON-DEMAND-SYNC HINZUFÜGEN +++
+import requests
+import csv
+import os
+from requests.auth import HTTPBasicAuth
+from datetime import datetime
+# +++ ENDE NEUE IMPORTE +++
+
 from . import app, db  # Importiert app und db aus __init__.py
 from .models import User, Product, Order, OrderItem
+
+
+# --- KONFIGURATION FÜR ON-DEMAND-SYNC ---
+ERP_CSV_URL = 'http://localhost:4004/rest/api/getProducts'
+ERP_USERNAME = 'alice'  # Hier Anmeldedaten eintragen
+ERP_PASSWORD = 'alice'      # Hier Anmeldedaten eintragen
+ERP_IMPORTS_DIR = 'erp_imports'
+CSV_SAVE_FILENAME = 'erp_products_archive.csv'
+CSV_DELIMITER = ','
+CSV_PRICE_DECIMAL = '.'
+# --- ENDE KONFIGURATION ---
 
 
 # Helper: cart operations (stored in session)
@@ -243,3 +262,127 @@ def change_status(order_id):
         db.session.commit()
         flash('Order status updated')
     return redirect(url_for('index'))
+
+
+# +++ NEUE ON-DEMAND SYNC ROUTE +++
+@app.route('/admin/sync', methods=['GET', 'POST'])
+@login_required
+def admin_sync():
+    """
+    Zeigt die Admin-Sync-Seite (GET) und führt den 
+    On-Demand-Sync (POST) aus.
+    Geschützt durch @login_required (jeder eingeloggte Benutzer).
+    """
+
+    if request.method == 'POST':
+        # --- START SYNC-LOGIK ---
+        print(f"[{datetime.now()}] Starte manuellen ERP-CSV-Sync...")
+        
+        # --- TEIL 0: SPEICHERPFAD DEFINIEREN ---
+        try:
+            # app.root_path ist der 'projekt' Ordner
+            base_dir = os.path.dirname(app.root_path) # Geht eine Ebene hoch
+            imports_dir_path = os.path.join(base_dir, ERP_IMPORTS_DIR)
+            os.makedirs(imports_dir_path, exist_ok=True) 
+            csv_save_path = os.path.join(imports_dir_path, CSV_SAVE_FILENAME) 
+        except Exception as e:
+            flash(f"Fehler beim Erstellen des Ordner-Pfads: {e}")
+            return redirect(url_for('admin_sync'))
+
+        # --- TEIL 1: CSV-Datei herunterladen und speichern ---
+        try:
+            print(f"Versuche Download von {ERP_CSV_URL} mit Benutzer: {ERP_USERNAME}...")
+            csv_response = requests.get(
+                ERP_CSV_URL,
+                timeout=10,
+                auth=HTTPBasicAuth(ERP_USERNAME, ERP_PASSWORD)
+            )
+            csv_response.raise_for_status() 
+            with open(csv_save_path, 'w', encoding='utf-8', newline='') as f:
+                f.write(csv_response.text)
+            print(f"Erfolgreich: CSV-Archiv gespeichert unter {csv_save_path}")
+            
+        except requests.exceptions.ConnectionError:
+            flash("Fehler (CSV): Konnte keine Verbindung zum ERP-Server herstellen.")
+            return redirect(url_for('admin_sync'))
+        except requests.exceptions.RequestException as e:
+            if "401" in str(e):
+                 flash(f"Fehler (CSV): Authentifizierung fehlgeschlagen (401). Bitte ERP_USERNAME und ERP_PASSWORD im Skript prüfen.")
+            else:
+                 flash(f"Fehler (CSV): Beim Download der CSV-Datei: {e}.")
+            return redirect(url_for('admin_sync'))
+        except IOError as e:
+            flash(f"Fehler (CSV): Beim Schreiben der Datei auf die Festplatte: {e}.")
+            return redirect(url_for('admin_sync'))
+
+        # --- TEIL 2: Gespeicherte CSV einlesen & DB aktualisieren ---
+        created_count = 0
+        updated_count = 0
+        errors_count = 0
+        deleted_count = 0
+        erp_ids_from_sync = set()
+
+        try:
+            with open(csv_save_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f, delimiter=CSV_DELIMITER) 
+                
+                for row in reader:
+                    try:
+                        # Angepasst an die Spaltennamen Ihrer CSV
+                        erp_id = row.get('productID')
+                        name = row.get('name')
+                        price_raw = row.get('price')
+                        description_raw = row.get('description')
+                        
+                        if not erp_id or not name or price_raw is None:
+                            print(f"Übersprungen: Unvollständige Daten in Zeile: {row}")
+                            errors_count += 1
+                            continue
+                        
+                        # Datenbereinigung
+                        price_str_clean = str(price_raw).replace(' null', '').strip()
+                        price = Decimal(price_str_clean)
+                        description = description_raw if description_raw and str(description_raw) != 'NaN' else ''
+                        erp_id_str = str(erp_id)
+                        erp_ids_from_sync.add(erp_id_str)
+
+                        # Produkt in DB suchen
+                        product = Product.query.filter_by(erp_id=erp_id_str).first()
+
+                        if product:
+                            product.name = name
+                            product.description = description
+                            product.price = price
+                            updated_count += 1
+                        else:
+                            product = Product(erp_id=erp_id_str, name=name, description=description, price=price)
+                            db.session.add(product)
+                            created_count += 1
+                    
+                    except Exception as e:
+                        print(f"Fehler bei Verarbeitung der Zeile {row}: {e}")
+                        errors_count += 1
+            
+            # --- TEIL 3: Produkte löschen ---
+            products_to_check = Product.query.filter(Product.erp_id != None).all()
+            for prod in products_to_check:
+                if prod.erp_id not in erp_ids_from_sync:
+                    db.session.delete(prod)
+                    deleted_count += 1
+
+            # --- TEIL 4: Änderungen in die DB schreiben ---
+            db.session.commit()
+            flash(f"ERP-Sync erfolgreich! Erstellt: {created_count}, Aktualisiert: {updated_count}, Gelöscht: {deleted_count}, Fehler: {errors_count}", 'success')
+
+        except FileNotFoundError:
+             flash(f"Fehler: Die Datei {csv_save_path} wurde nicht gefunden.")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Fehler (CSV) beim Einlesen der Datei oder DB-Update: {e}")
+        
+        # --- ENDE SYNC-LOGIK ---
+        
+        return redirect(url_for('admin_sync'))
+
+    # GET Request: Zeige einfach die Admin-Seite mit dem Button an
+    return render_template('admin_sync.html')

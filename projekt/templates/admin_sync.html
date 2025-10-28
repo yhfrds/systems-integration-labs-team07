@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>ERP Produkt Synchronisation (On-Demand)</h2>
+  <p>
+    Klicken Sie auf den Button, um die Produktdaten *jetzt* vom ERP-Server 
+    herunterzuladen und die Webshop-Datenbank zu aktualisieren.
+  </p>
+  <p>Der Vorgang kann einen Moment dauern. Bitte warten Sie auf die Erfolgs- oder Fehlermeldung.</p>
+  
+  <form method="post" onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').innerText='Wird verarbeitet...';">
+    <button type="submit" style="padding: 10px 15px; font-size: 16px;">
+      Synchronisierung jetzt starten
+    </button>
+  </form>
+{% endblock %}
