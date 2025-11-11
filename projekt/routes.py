@@ -445,36 +445,30 @@ def change_status(order_id):
 
 
 # +++ KOMPLETT NEUE 'admin_sync' LOGIK (API statt CSV) +++
-@app.route('/admin/sync', methods=['GET', 'POST'])
-@login_required
-def admin_sync():
+from . import app, db, scheduler
+
+def perform_erp_sync():
     """
-    GET: Leitet nur noch auf Index (HTML-Seite wird entfernt).
-    POST: Führt den API-basierten Produkt-Stammdaten-Sync aus.
+    Die eigentliche Sync-Logik.
+    Kann manuell oder automatisch aufgerufen werden.
+    Gibt einen Status-String zurück.
+    
+    WICHTIG: Diese Funktion benötigt einen aktiven App-Kontext!
+    Der Aufrufer (Route oder Job) muss 'with app.app_context():' bereitstellen.
     """
     
-    if request.method == 'GET':
-        # Die Seite 'admin_sync.html' wird nicht mehr benötigt
-        flash("Sync wird über POST ausgelöst (Button in der Navi-Leiste).")
-        return redirect(url_for('index'))
-
-    # --- START SYNC-LOGIK (POST) ---
-    print(f"[{datetime.now()}] Starte manuellen ERP-API-Sync...")
+    print(f"[{datetime.now()}] Starte ERP-API-Sync...")
     
     try:
         # --- 1. Produkte vom ERP-Endpunkt abrufen ---
-        print(f"Versuche Download von {ERP_PRODUCTS_URL}...")
         response = requests.get(ERP_PRODUCTS_URL, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
         response.raise_for_status()
-        
         erp_products = response.json().get('value', [])
         if not erp_products:
-            flash("ERP-Sync: Konnte keine Produkte vom ERP empfangen (leere Liste).")
-            return redirect(url_for('index'))
+            return "ERP-Sync: Konnte keine Produkte vom ERP empfangen (leere Liste)."
             
     except requests.exceptions.RequestException as e:
-        flash(f"Fehler (API): Beim Download der Produktdaten: {e}")
-        return redirect(url_for('index'))
+        return f"Fehler (API): Beim Download der Produktdaten: {e}"
 
     # --- 2. Lokale DB mit ERP-Daten abgleichen ---
     created_count = 0
@@ -486,6 +480,7 @@ def admin_sync():
     try:
         for item in erp_products:
             try:
+                # Logik zum Parsen von 'item'
                 prod_guid = item.get('ID')
                 prod_str_id = item.get('productID')
                 name = item.get('name')
@@ -527,7 +522,6 @@ def admin_sync():
                 errors_count += 1
         
         # --- 3. Lokale Produkte löschen, die nicht mehr im ERP sind ---
-        # (Filtert alle lokalen Produkte, die eine GUID haben)
         products_to_check = Product.query.filter(Product.id.like('________-____-____-____-____________')).all()
         
         for prod in products_to_check:
@@ -537,10 +531,43 @@ def admin_sync():
 
         # --- 4. Änderungen in die DB schreiben ---
         db.session.commit()
-        flash(f"ERP-API-Sync erfolgreich! Erstellt: {created_count}, Aktualisiert: {updated_count}, Gelöscht: {deleted_count}, Fehler: {errors_count}", 'success')
+        return f"ERP-API-Sync erfolgreich! Erstellt: {created_count}, Aktualisiert: {updated_count}, Gelöscht: {deleted_count}, Fehler: {errors_count}"
 
     except Exception as e:
         db.session.rollback()
-        flash(f"Fehler (DB) beim Einlesen oder DB-Update: {e}")
+        return f"Fehler (DB) beim Einlesen oder DB-Update: {e}"
+
+
+# +++ NEUER HINTERGRUND-JOB +++
+@scheduler.task('interval', id='erp_sync_job', minutes=5, misfire_grace_time=900)
+def scheduled_sync_job():
+    """
+    Führt den automatischen ERP-Produktsync jede Stunde im Hintergrund aus.
+    """
+    # App-Kontext für die Sync-Funktion und DB-Zugriff bereitstellen
+    with app.app_context():
+        status_message = perform_erp_sync()
+        # Loggt das Ergebnis in die Konsole (da kein Benutzer eine flash-Nachricht sehen kann)
+        print(f"Automatischer Sync-Job beendet: {status_message}")
+
+
+# +++ ANGEPASSTE MANUELLE ROUTE +++
+@app.route('/admin/sync', methods=['GET', 'POST'])
+@login_required
+def admin_sync():
+    """
+    GET: Leitet um.
+    POST: Löst den Sync manuell aus und zeigt das Ergebnis als Flash-Nachricht an.
+    """
+    if request.method == 'GET':
+        flash("Sync wird über POST ausgelöst (Button in der Navi-Leiste).")
+        return redirect(url_for('index'))
+
+    # Die Route stellt bereits einen App-Kontext bereit
+    try:
+        status_message = perform_erp_sync()
+        flash(status_message, 'success')
+    except Exception as e:
+        flash(f"Fehler beim manuellen Sync: {e}", 'danger')
     
     return redirect(url_for('index'))
