@@ -4,13 +4,17 @@ from flask import render_template, request, redirect, url_for, flash, session, a
 from flask_login import login_user, logout_user, login_required, current_user
 from decimal import Decimal
 
-# +++ NEUE IMPORTE FÜR ON-DEMAND-SYNC (API) +++
+# +++ NEUE IMPORTE FÜR API, SYNC & RETRY-LOGIK +++
 import requests
 from requests.auth import HTTPBasicAuth
+# Imports für Retry-Logik
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from datetime import datetime
 # +++ ENDE NEUE IMPORTE +++
 
-from . import app, db  # Importiert app und db aus __init__.py
+# Importiert app, db und scheduler aus __init__.py
+from . import app, db, scheduler 
 from .models import User, Product, Order, OrderItem
 
 
@@ -24,6 +28,28 @@ ERP_USERNAME = 'alice'
 ERP_PASSWORD = 'alice'
 ERP_AUTH = HTTPBasicAuth(ERP_USERNAME, ERP_PASSWORD)
 ERP_TIMEOUT = 10 # Timeout von 10 Sekunden für Anfragen
+
+# +++ NEU: GLOBALE SESSION MIT RETRY-LOGIK +++
+# 1. Definiere die Retry-Strategie
+retry_strategy = Retry(
+    total=3,  # 3 Wiederholungsversuche insgesamt
+    backoff_factor=0.5, # Wartezeit zwischen Versuchen (0.5s, 1s, 2s)
+    status_forcelist=[502, 503, 504], # Wiederhole bei diesen Server-Fehlern
+    # HINWEIS: Verbindungsfehler und Timeouts werden standardmäßig wiederholt
+)
+
+# 2. Erstelle einen Adapter mit dieser Strategie
+adapter = HTTPAdapter(max_retries=retry_strategy)
+
+# 3. Erstelle eine globale Session
+erp_session = requests.Session()
+
+# 4. Weise die Auth der Session zu (muss nicht mehr einzeln übergeben werden)
+erp_session.auth = ERP_AUTH 
+
+# 5. Montiere den Adapter für alle http/https-Anfragen
+erp_session.mount("http://", adapter)
+erp_session.mount("https://", adapter)
 # --- ENDE KONFIGURATION ---
 
 
@@ -32,10 +58,11 @@ ERP_TIMEOUT = 10 # Timeout von 10 Sekunden für Anfragen
 def get_erp_stock(product_guid_id):
     """
     Holt den Echtzeit-Lagerbestand für EINE Produkt-GUID aus dem ERP.
+    Verwendet jetzt die globale Session mit Retry-Logik.
     """
     try:
         url = f"{ERP_PRODUCTS_URL}({product_guid_id})" # OData-Syntax für PK-Zugriff
-        response = requests.get(url, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
+        response = erp_session.get(url, timeout=ERP_TIMEOUT) # Verwendet erp_session
         response.raise_for_status() # Löst Fehler aus bei 4xx/5xx
         return response.json().get('stock', 0)
     except requests.exceptions.RequestException as e:
@@ -47,6 +74,7 @@ def get_or_create_erp_customer(user):
     Sucht einen Kunden im ERP per E-Mail. 
     Wenn nicht vorhanden, wird er erstellt.
     Gibt die ERP-Kunden-GUID zurück.
+    Verwendet jetzt die globale Session mit Retry-Logik.
     """
     # 1. Prüfen, ob wir die ID bereits im lokalen User gespeichert haben
     if user.erp_customer_id:
@@ -55,7 +83,7 @@ def get_or_create_erp_customer(user):
     try:
         # 2. Im ERP nach E-Mail suchen
         filter_url = f"{ERP_CUSTOMERS_URL}?$filter=email eq '{user.email}'"
-        response = requests.get(filter_url, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
+        response = erp_session.get(filter_url, timeout=ERP_TIMEOUT) # Verwendet erp_session
         response.raise_for_status()
         
         customers = response.json().get('value', [])
@@ -66,8 +94,6 @@ def get_or_create_erp_customer(user):
         else:
             # 4. Fall B: Kunde nicht gefunden, neu im ERP anlegen
             print(f"Erstelle neuen ERP-Kunden für {user.email}...")
-            # Adress-Logik (falls vorhanden, ansonsten leer lassen)
-            # Hier müsste man ggf. die 'address' des Users parsen
             
             payload = {
                 "name": user.name,
@@ -76,7 +102,7 @@ def get_or_create_erp_customer(user):
                 "city": "N/A", # Hier fehlen uns strukturierte Daten
                 "country_code": "DE" # Annahme
             }
-            create_response = requests.post(ERP_CUSTOMERS_URL, json=payload, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
+            create_response = erp_session.post(ERP_CUSTOMERS_URL, json=payload, timeout=ERP_TIMEOUT) # Verwendet erp_session
             create_response.raise_for_status()
             erp_id = create_response.json()['ID']
             
@@ -112,6 +138,9 @@ def clear_cart():
 def index():
     products = Product.query.all()
     return render_template('index.html', products=products, cart=get_cart())
+
+# --- product_new UND product_delete WURDEN WIE GEWÜNSCHT ENTFERNT ---
+
 
 # --- Auth & User Routes ---
 @app.route('/register', methods=['GET', 'POST'])
@@ -270,8 +299,6 @@ def cart_remove(product_id):
     flash('Removed item from cart')
     return redirect(url_for('cart_view'))
 
-# ... (andere Routen) ...
-
 @app.route('/checkout', methods=['POST'])
 @login_required
 def checkout():
@@ -284,7 +311,6 @@ def checkout():
     4. Speichert eine *Kopie* der Bestellung lokal für "My Orders".
     """
     
-    # Behebt den "NameError: name 'cart' is not defined"
     cart = get_cart() 
     
     if not cart:
@@ -307,7 +333,7 @@ def checkout():
 
     # --- 2. Warenkorb validieren (Preis & Echtzeit-Stock) ---
     
-    # Behebt den "RuntimeError: dictionary changed size during iteration"
+    # list(cart.items()) behebt den "RuntimeError: dictionary changed size"
     for pid_guid, qty in list(cart.items()): 
         p = Product.query.get(pid_guid)
         if not p:
@@ -330,7 +356,7 @@ def checkout():
         erp_items_payload.append({
             "product_ID": p.id, # Die Produkt-GUID
             "quantity": qty,
-            "itemAmount": str(subtotal) # Behebt "422 Unprocessable Entity"
+            "itemAmount": str(subtotal) # Feld für ERP hinzugefügt
         })
         
         # Für lokale DB-Kopie
@@ -349,14 +375,14 @@ def checkout():
         "customer_ID": erp_customer_id,
         "orderDate": datetime.utcnow().strftime('%Y-%m-%d'),
         "currency_code": "EUR", # Annahme
-        "orderAmount": str(total), # Behebt "422 Unprocessable Entity"
+        "orderAmount": str(total), # Feld für ERP hinzugefügt
         "items": erp_items_payload
     }
 
     try:
-        response = requests.post(ERP_ORDERS_URL, json=order_payload, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
+        # Verwendet jetzt die globale Session mit Retry-Logik
+        response = erp_session.post(ERP_ORDERS_URL, json=order_payload, timeout=ERP_TIMEOUT)
         
-        # Behebt den "IndentationError"
         if response.status_code == 201:
             # --- ERFOLG ---
             erp_order_guid = response.json().get('ID')
@@ -444,8 +470,7 @@ def change_status(order_id):
     return redirect(url_for('index'))
 
 
-# +++ KOMPLETT NEUE 'admin_sync' LOGIK (API statt CSV) +++
-from . import app, db, scheduler
+# --- AUTOMATISIERTE SYNC-LOGIK ---
 
 def perform_erp_sync():
     """
@@ -461,7 +486,8 @@ def perform_erp_sync():
     
     try:
         # --- 1. Produkte vom ERP-Endpunkt abrufen ---
-        response = requests.get(ERP_PRODUCTS_URL, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
+        # Verwendet jetzt die globale Session mit Retry-Logik
+        response = erp_session.get(ERP_PRODUCTS_URL, timeout=ERP_TIMEOUT)
         response.raise_for_status()
         erp_products = response.json().get('value', [])
         if not erp_products:
@@ -539,7 +565,7 @@ def perform_erp_sync():
 
 
 # +++ NEUER HINTERGRUND-JOB +++
-@scheduler.task('interval', id='erp_sync_job', minutes=5, misfire_grace_time=900)
+@scheduler.task('interval', id='erp_sync_job', hours=1, misfire_grace_time=900)
 def scheduled_sync_job():
     """
     Führt den automatischen ERP-Produktsync jede Stunde im Hintergrund aus.
