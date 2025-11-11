@@ -4,10 +4,8 @@ from flask import render_template, request, redirect, url_for, flash, session, a
 from flask_login import login_user, logout_user, login_required, current_user
 from decimal import Decimal
 
-# +++ NEUE IMPORTE FÜR ON-DEMAND-SYNC HINZUFÜGEN +++
+# +++ NEUE IMPORTE FÜR ON-DEMAND-SYNC (API) +++
 import requests
-import csv
-import os
 from requests.auth import HTTPBasicAuth
 from datetime import datetime
 # +++ ENDE NEUE IMPORTE +++
@@ -16,15 +14,85 @@ from . import app, db  # Importiert app und db aus __init__.py
 from .models import User, Product, Order, OrderItem
 
 
-# --- KONFIGURATION FÜR ON-DEMAND-SYNC ---
-ERP_CSV_URL = 'http://localhost:4004/rest/api/getProducts'
-ERP_USERNAME = 'alice'  # Hier Anmeldedaten eintragen
-ERP_PASSWORD = 'alice'      # Hier Anmeldedaten eintragen
-ERP_IMPORTS_DIR = 'erp_imports'
-CSV_SAVE_FILENAME = 'erp_products_archive.csv'
-CSV_DELIMITER = ','
-CSV_PRICE_DECIMAL = '.'
+# --- NEUE KONFIGURATION FÜR ECHTZEIT-API (RPC) ---
+ERP_BASE_URL = 'http://localhost:4004/odata/v4/simple-erp'
+ERP_PRODUCTS_URL = f"{ERP_BASE_URL}/Products"
+ERP_CUSTOMERS_URL = f"{ERP_BASE_URL}/Customers"
+ERP_ORDERS_URL = f"{ERP_BASE_URL}/Orders"
+
+ERP_USERNAME = 'alice'
+ERP_PASSWORD = 'alice'
+ERP_AUTH = HTTPBasicAuth(ERP_USERNAME, ERP_PASSWORD)
+ERP_TIMEOUT = 10 # Timeout von 10 Sekunden für Anfragen
 # --- ENDE KONFIGURATION ---
+
+
+# --- HELPER: ERP-API-Funktionen (RPC-Aufrufe) ---
+
+def get_erp_stock(product_guid_id):
+    """
+    Holt den Echtzeit-Lagerbestand für EINE Produkt-GUID aus dem ERP.
+    """
+    try:
+        url = f"{ERP_PRODUCTS_URL}({product_guid_id})" # OData-Syntax für PK-Zugriff
+        response = requests.get(url, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
+        response.raise_for_status() # Löst Fehler aus bei 4xx/5xx
+        return response.json().get('stock', 0)
+    except requests.exceptions.RequestException as e:
+        print(f"ERP Stock-Check Fehler für {product_guid_id}: {e}")
+        return 0 # Im Fehlerfall "Out of Stock" annehmen
+
+def get_or_create_erp_customer(user):
+    """
+    Sucht einen Kunden im ERP per E-Mail. 
+    Wenn nicht vorhanden, wird er erstellt.
+    Gibt die ERP-Kunden-GUID zurück.
+    """
+    # 1. Prüfen, ob wir die ID bereits im lokalen User gespeichert haben
+    if user.erp_customer_id:
+        return user.erp_customer_id
+
+    try:
+        # 2. Im ERP nach E-Mail suchen
+        filter_url = f"{ERP_CUSTOMERS_URL}?$filter=email eq '{user.email}'"
+        response = requests.get(filter_url, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
+        response.raise_for_status()
+        
+        customers = response.json().get('value', [])
+        
+        if customers:
+            # 3. Fall A: Kunde gefunden
+            erp_id = customers[0]['ID']
+        else:
+            # 4. Fall B: Kunde nicht gefunden, neu im ERP anlegen
+            print(f"Erstelle neuen ERP-Kunden für {user.email}...")
+            # Adress-Logik (falls vorhanden, ansonsten leer lassen)
+            # Hier müsste man ggf. die 'address' des Users parsen
+            
+            payload = {
+                "name": user.name,
+                "email": user.email,
+                "street": user.address.split(',')[0] if user.address else "N/A",
+                "city": "N/A", # Hier fehlen uns strukturierte Daten
+                "country_code": "DE" # Annahme
+            }
+            create_response = requests.post(ERP_CUSTOMERS_URL, json=payload, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
+            create_response.raise_for_status()
+            erp_id = create_response.json()['ID']
+            
+        # 5. ERP-ID im lokalen User-Modell für zukünftige Checkouts speichern
+        user.erp_customer_id = erp_id
+        db.session.commit()
+        return erp_id
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Fehler beim Abrufen/Erstellen des ERP-Kunden: {e}")
+        db.session.rollback()
+        return None
+    except Exception as e:
+        db.session.rollback()
+        print(f"Allgemeiner Fehler in get_or_create_erp_customer: {e}")
+        return None
 
 
 # Helper: cart operations (stored in session)
@@ -45,38 +113,9 @@ def index():
     products = Product.query.all()
     return render_template('index.html', products=products, cart=get_cart())
 
-@app.route('/product/new', methods=['GET', 'POST'])
-def product_new():
-    # ... (Code für product_new kopieren)
-    if request.method == 'POST':
-        name = request.form['name'].strip()
-        desc = request.form.get('description', '').strip()
-        price_raw = request.form['price']
-        try:
-            price = Decimal(price_raw)
-        except:
-            flash('Invalid price format')
-            return redirect(url_for('product_new'))
-        p = Product(name=name, description=desc, price=price)
-        db.session.add(p)
-        db.session.commit()
-        flash('Product added')
-        return redirect(url_for('index'))
-    return render_template('product_form.html')
-
-@app.route('/product/<int:product_id>/delete', methods=['POST'])
-def product_delete(product_id):
-    # ... (Code für product_delete kopieren)
-    p = Product.query.get_or_404(product_id)
-    db.session.delete(p)
-    db.session.commit()
-    flash('Product removed')
-    return redirect(url_for('index'))
-
 # --- Auth & User Routes ---
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    # ... (Code für register kopieren)
     if request.method == 'POST':
         name = request.form['name'].strip()
         email = request.form['email'].strip().lower()
@@ -96,7 +135,6 @@ def register():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # ... (Code für login kopieren)
     if request.method == 'POST':
         email = request.form['email'].strip().lower()
         password = request.form['password']
@@ -112,7 +150,6 @@ def login():
 @app.route('/logout')
 @login_required
 def logout():
-    # ... (Code für logout kopieren)
     logout_user()
     flash('Logged out')
     return redirect(url_for('index'))
@@ -153,90 +190,232 @@ def profile():
             update_made = True
         
         # 5. Änderungen in der Datenbank speichern
-        if update_made:
-            db.session.commit()
-            flash('Profile updated successfully.')
-        else:
-            flash('No changes detected.')
+        try:
+            if update_made:
+                db.session.commit()
+                flash('Profile updated successfully.')
+            else:
+                flash('No changes detected.')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating profile: {e}')
 
         return redirect(url_for('profile'))
         
     return render_template('profile.html')
 
 # --- Cart & Order Routes ---
-@app.route('/cart/add/<int:product_id>', methods=['POST'])
+@app.route('/cart/add/<string:product_id>', methods=['POST']) # GEÄNDERT: int -> string
 def cart_add(product_id):
-    # ... (Code für cart_add kopieren)
-    product = Product.query.get_or_404(product_id)
+    product = Product.query.get_or_404(product_id) # Sucht jetzt nach GUID
     cart = get_cart()
     qty = int(request.form.get('quantity', 1))
-    if qty < 1:
-        qty = 1
-    cart[str(product_id)] = cart.get(str(product_id), 0) + qty
+    if qty < 1: qty = 1
+    
+    # +++ NEU: Echtzeit-Stock-Prüfung beim Hinzufügen +++
+    current_in_cart = cart.get(product_id, 0)
+    total_wanted = current_in_cart + qty
+    
+    real_stock = get_erp_stock(product.id)
+    
+    if total_wanted > real_stock:
+        flash(f"Fehler: Nicht genügend Lagerbestand für '{product.name}'. Verfügbar: {real_stock}, Sie wollten: {total_wanted}")
+        return redirect(request.referrer or url_for('index'))
+    # +++ ENDE Stock-Prüfung +++
+    
+    cart[product_id] = total_wanted # Verwendet GUID als Key
     save_cart(cart)
-    flash(f'Added {qty} × {product.name} to cart')
-    return redirect(url_for('index'))
+    flash(f"Added {qty} × {product.name} to cart")
+    return redirect(request.referrer or url_for('index'))
 
 @app.route('/cart')
 def cart_view():
-    # ... (Code für cart_view kopieren)
     cart = get_cart()
     items = []
     total = Decimal('0.00')
-    for pid_str, qty in cart.items():
-        pid = int(pid_str)
-        p = Product.query.get(pid)
+    
+    cart_changed = False
+    for pid_str_guid, qty in list(cart.items()): # list() zur Kopieerstellung, damit pop funktioniert
+        # pid_str_guid ist jetzt die GUID
+        p = Product.query.get(pid_str_guid)
         if not p:
+            # Produkt existiert nicht mehr in unserer DB (vielleicht durch Sync entfernt)
+            cart.pop(pid_str_guid, None)
+            cart_changed = True
             continue
+        
+        # +++ NEU: Echtzeit-Stock für die Ansicht holen +++
+        real_stock = get_erp_stock(p.id)
+        
         subtotal = (p.price * qty)
-        items.append({'product': p, 'quantity': qty, 'subtotal': subtotal})
+        items.append({
+            'product': p, 
+            'quantity': qty, 
+            'subtotal': subtotal,
+            'real_stock': real_stock # Für Template
+        })
         total += subtotal
+    
+    if cart_changed:
+        save_cart(cart)
+        flash("Einige Artikel in Ihrem Warenkorb waren nicht mehr verfügbar und wurden entfernt.")
+        
     return render_template('cart.html', items=items, total=total)
 
-@app.route('/cart/remove/<int:product_id>', methods=['POST'])
+@app.route('/cart/remove/<string:product_id>', methods=['POST']) # GEÄNDERT: int -> string
 def cart_remove(product_id):
-    # ... (Code für cart_remove kopieren)
     cart = get_cart()
-    cart.pop(str(product_id), None)
+    cart.pop(product_id, None) # Verwendet GUID als Key
     save_cart(cart)
     flash('Removed item from cart')
     return redirect(url_for('cart_view'))
 
+# ... (andere Routen) ...
+
 @app.route('/checkout', methods=['POST'])
 @login_required
 def checkout():
-    # ... (Code für checkout kopieren)
-    cart = get_cart()
+    """
+    +++ KOMPLETT NEU GESCHRIEBEN FÜR ECHTZEIT-RPC +++
+    Ersetzt das lokale Speichern durch einen RPC-Call an das ERP.
+    1. Holt/Erstellt ERP-Kunden.
+    2. Prüft Echtzeit-Lagerbestand für *jeden* Artikel.
+    3. Erstellt die Bestellung im ERP via "Deep Insert".
+    4. Speichert eine *Kopie* der Bestellung lokal für "My Orders".
+    """
+    
+    # Behebt den "NameError: name 'cart' is not defined"
+    cart = get_cart() 
+    
     if not cart:
         flash('Cart is empty')
         return redirect(url_for('index'))
+
+    # --- 1. ERP-Kunden-ID holen/erstellen ---
+    try:
+        erp_customer_id = get_or_create_erp_customer(current_user)
+        if not erp_customer_id:
+            flash("Kritischer Fehler: Ihr Kundenkonto konnte nicht im ERP-System gefunden oder erstellt werden.")
+            return redirect(url_for('cart_view'))
+    except Exception as e:
+        flash(f"Fehler bei der Kunden-Synchronisierung: {e}")
+        return redirect(url_for('cart_view'))
+
+    erp_items_payload = []
+    local_items_for_order = []
     total = Decimal('0.00')
-    items_for_order = []
-    for pid_str, qty in cart.items():
-        pid = int(pid_str)
-        p = Product.query.get(pid)
+
+    # --- 2. Warenkorb validieren (Preis & Echtzeit-Stock) ---
+    
+    # Behebt den "RuntimeError: dictionary changed size during iteration"
+    for pid_guid, qty in list(cart.items()): 
+        p = Product.query.get(pid_guid)
         if not p:
-            continue
-        subtotal = p.price * qty
+            flash(f"Ein Produkt im Warenkorb ist nicht mehr verfügbar und wurde entfernt.")
+            cart.pop(pid_guid, None) # Diese Zeile erfordert list() oben
+            save_cart(cart)
+            return redirect(url_for('cart_view'))
+
+        # --- ECHTZEIT-STOCK-PRÜFUNG ---
+        real_stock = get_erp_stock(p.id)
+        if qty > real_stock:
+            flash(f"Bestand für '{p.name}' nicht ausreichend (Verfügbar: {real_stock}). Bestellung abgebrochen.")
+            return redirect(url_for('cart_view'))
+        
+        # +++ BERECHNUNG DES PREISES +++
+        subtotal = (p.price * qty)
         total += subtotal
-        items_for_order.append(
-            {'product': p, 'quantity': qty, 'unit_price': p.price})
-    o = Order(user_id=current_user.id, total_price=total, status='pending')
-    db.session.add(o)
-    db.session.commit()
-    for it in items_for_order:
-        oi = OrderItem(order_id=o.id, product_id=it['product'].id,
-                       quantity=it['quantity'], unit_price=it['unit_price'])
-        db.session.add(oi)
-    db.session.commit()
-    clear_cart()
-    flash('Order placed')
-    return redirect(url_for('orders'))
+        
+        # Für ERP-Payload
+        erp_items_payload.append({
+            "product_ID": p.id, # Die Produkt-GUID
+            "quantity": qty,
+            "itemAmount": str(subtotal) # Behebt "422 Unprocessable Entity"
+        })
+        
+        # Für lokale DB-Kopie
+        local_items_for_order.append({
+            'product': p, 
+            'quantity': qty, 
+            'unit_price': p.price
+        })
+
+    if not erp_items_payload:
+        flash("Warenkorb ist nach Prüfung leer.")
+        return redirect(url_for('cart_view'))
+
+    # --- 3. Bestellung an ERP senden (Deep Insert) ---
+    order_payload = {
+        "customer_ID": erp_customer_id,
+        "orderDate": datetime.utcnow().strftime('%Y-%m-%d'),
+        "currency_code": "EUR", # Annahme
+        "orderAmount": str(total), # Behebt "422 Unprocessable Entity"
+        "items": erp_items_payload
+    }
+
+    try:
+        response = requests.post(ERP_ORDERS_URL, json=order_payload, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
+        
+        # Behebt den "IndentationError"
+        if response.status_code == 201:
+            # --- ERFOLG ---
+            erp_order_guid = response.json().get('ID')
+            
+            # --- 4. Lokale Kopie für "My Orders" speichern ---
+            o = Order(
+                user_id=current_user.id, 
+                total_price=total, 
+                status='Submitted to ERP', # Neuer Status
+                erp_order_id=erp_order_guid
+            )
+            db.session.add(o)
+            db.session.commit() # Commit, um 'o.id' zu bekommen
+            
+            for it in local_items_for_order:
+                oi = OrderItem(
+                    order_id=o.id, 
+                    product_id=it['product'].id,
+                    quantity=it['quantity'], 
+                    unit_price=it['unit_price']
+                )
+                db.session.add(oi)
+            
+            db.session.commit()
+            clear_cart()
+            flash('Bestellung erfolgreich an ERP übermittelt!')
+            return redirect(url_for('orders'))
+            
+        elif response.status_code == 400 or response.status_code == 422:
+            # --- ERP-Fehler (z.B. Stock-Problem oder Validierungsfehler) ---
+            try:
+                error_msg = response.json().get('error', {}).get('message', 'Unbekannter ERP-Fehler')
+                details = response.json().get('error', {}).get('details', [])
+                if details:
+                    detail_messages = [d.get('message') for d in details if d.get('message')]
+                    error_msg += ": " + ", ".join(detail_messages)
+            except requests.exceptions.JSONDecodeError:
+                error_msg = response.text
+                
+            flash(f"ERP-Fehler: {error_msg}")
+            return redirect(url_for('cart_view'))
+        else:
+            # --- Anderer Server-Fehler ---
+            flash(f"Unerwarteter ERP-Fehler: {response.status_code} - {response.text}")
+            response.raise_for_status()
+
+    except requests.exceptions.RequestException as e:
+        flash(f"Kritischer Verbindungsfehler zum ERP: {e}")
+        return redirect(url_for('cart_view'))
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Allgemeiner Fehler beim Checkout: {e}")
+        return redirect(url_for('cart_view'))
+
 
 @app.route('/orders')
 @login_required
 def orders():
-    # ... (Code für orders kopieren)
+    # Zeigt die *lokal gespeicherten Kopien* der Bestellungen an
     my_orders = Order.query.filter_by(
         user_id=current_user.id).order_by(Order.created_at.desc()).all()
     return render_template('orders.html', orders=my_orders)
@@ -244,7 +423,7 @@ def orders():
 @app.route('/order/<int:order_id>')
 @login_required
 def order_detail(order_id):
-    # ... (Code für order_detail kopieren)
+    # Zeigt Details der *lokal gespeicherten Kopie* an
     o = Order.query.get_or_404(order_id)
     if o.user_id != current_user.id:
         abort(403)
@@ -252,7 +431,8 @@ def order_detail(order_id):
 
 @app.route('/order/<int:order_id>/status', methods=['POST'])
 def change_status(order_id):
-    # ... (Code für change_status kopieren)
+    # Ändert nur den Status der *lokalen Kopie*
+    # (Keine Verbindung zum ERP in dieser alten Funktion)
     new_status = request.form.get('status')
     o = Order.query.get_or_404(order_id)
     if new_status not in ('pending', 'shipped', 'completed'):
@@ -260,129 +440,107 @@ def change_status(order_id):
     else:
         o.status = new_status
         db.session.commit()
-        flash('Order status updated')
+        flash('Order status updated (local only)')
     return redirect(url_for('index'))
 
 
-# +++ NEUE ON-DEMAND SYNC ROUTE +++
+# +++ KOMPLETT NEUE 'admin_sync' LOGIK (API statt CSV) +++
 @app.route('/admin/sync', methods=['GET', 'POST'])
 @login_required
 def admin_sync():
     """
-    Zeigt die Admin-Sync-Seite (GET) und führt den 
-    On-Demand-Sync (POST) aus.
-    Geschützt durch @login_required (jeder eingeloggte Benutzer).
+    GET: Leitet nur noch auf Index (HTML-Seite wird entfernt).
+    POST: Führt den API-basierten Produkt-Stammdaten-Sync aus.
     """
+    
+    if request.method == 'GET':
+        # Die Seite 'admin_sync.html' wird nicht mehr benötigt
+        flash("Sync wird über POST ausgelöst (Button in der Navi-Leiste).")
+        return redirect(url_for('index'))
 
-    if request.method == 'POST':
-        # --- START SYNC-LOGIK ---
-        print(f"[{datetime.now()}] Starte manuellen ERP-CSV-Sync...")
+    # --- START SYNC-LOGIK (POST) ---
+    print(f"[{datetime.now()}] Starte manuellen ERP-API-Sync...")
+    
+    try:
+        # --- 1. Produkte vom ERP-Endpunkt abrufen ---
+        print(f"Versuche Download von {ERP_PRODUCTS_URL}...")
+        response = requests.get(ERP_PRODUCTS_URL, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
+        response.raise_for_status()
         
-        # --- TEIL 0: SPEICHERPFAD DEFINIEREN ---
-        try:
-            # app.root_path ist der 'projekt' Ordner
-            base_dir = os.path.dirname(app.root_path) # Geht eine Ebene hoch
-            imports_dir_path = os.path.join(base_dir, ERP_IMPORTS_DIR)
-            os.makedirs(imports_dir_path, exist_ok=True) 
-            csv_save_path = os.path.join(imports_dir_path, CSV_SAVE_FILENAME) 
-        except Exception as e:
-            flash(f"Fehler beim Erstellen des Ordner-Pfads: {e}")
-            return redirect(url_for('admin_sync'))
-
-        # --- TEIL 1: CSV-Datei herunterladen und speichern ---
-        try:
-            print(f"Versuche Download von {ERP_CSV_URL} mit Benutzer: {ERP_USERNAME}...")
-            csv_response = requests.get(
-                ERP_CSV_URL,
-                timeout=10,
-                auth=HTTPBasicAuth(ERP_USERNAME, ERP_PASSWORD)
-            )
-            csv_response.raise_for_status() 
-            with open(csv_save_path, 'w', encoding='utf-8', newline='') as f:
-                f.write(csv_response.text)
-            print(f"Erfolgreich: CSV-Archiv gespeichert unter {csv_save_path}")
+        erp_products = response.json().get('value', [])
+        if not erp_products:
+            flash("ERP-Sync: Konnte keine Produkte vom ERP empfangen (leere Liste).")
+            return redirect(url_for('index'))
             
-        except requests.exceptions.ConnectionError:
-            flash("Fehler (CSV): Konnte keine Verbindung zum ERP-Server herstellen.")
-            return redirect(url_for('admin_sync'))
-        except requests.exceptions.RequestException as e:
-            if "401" in str(e):
-                 flash(f"Fehler (CSV): Authentifizierung fehlgeschlagen (401). Bitte ERP_USERNAME und ERP_PASSWORD im Skript prüfen.")
-            else:
-                 flash(f"Fehler (CSV): Beim Download der CSV-Datei: {e}.")
-            return redirect(url_for('admin_sync'))
-        except IOError as e:
-            flash(f"Fehler (CSV): Beim Schreiben der Datei auf die Festplatte: {e}.")
-            return redirect(url_for('admin_sync'))
+    except requests.exceptions.RequestException as e:
+        flash(f"Fehler (API): Beim Download der Produktdaten: {e}")
+        return redirect(url_for('index'))
 
-        # --- TEIL 2: Gespeicherte CSV einlesen & DB aktualisieren ---
-        created_count = 0
-        updated_count = 0
-        errors_count = 0
-        deleted_count = 0
-        erp_ids_from_sync = set()
+    # --- 2. Lokale DB mit ERP-Daten abgleichen ---
+    created_count = 0
+    updated_count = 0
+    errors_count = 0
+    deleted_count = 0
+    erp_ids_from_sync = set()
 
-        try:
-            with open(csv_save_path, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f, delimiter=CSV_DELIMITER) 
+    try:
+        for item in erp_products:
+            try:
+                prod_guid = item.get('ID')
+                prod_str_id = item.get('productID')
+                name = item.get('name')
+                price_raw = item.get('price')
                 
-                for row in reader:
-                    try:
-                        # Angepasst an die Spaltennamen Ihrer CSV
-                        erp_id = row.get('productID')
-                        name = row.get('name')
-                        price_raw = row.get('price')
-                        description_raw = row.get('description')
-                        
-                        if not erp_id or not name or price_raw is None:
-                            print(f"Übersprungen: Unvollständige Daten in Zeile: {row}")
-                            errors_count += 1
-                            continue
-                        
-                        # Datenbereinigung
-                        price_str_clean = str(price_raw).replace(' null', '').strip()
-                        price = Decimal(price_str_clean)
-                        description = description_raw if description_raw and str(description_raw) != 'NaN' else ''
-                        erp_id_str = str(erp_id)
-                        erp_ids_from_sync.add(erp_id_str)
+                if not prod_guid or not name or price_raw is None:
+                    print(f"Übersprungen: Unvollständige Daten in Zeile: {item}")
+                    errors_count += 1
+                    continue
+                
+                erp_ids_from_sync.add(prod_guid)
+                price = Decimal(str(price_raw))
+                description = item.get('description') or ''
 
-                        # Produkt in DB suchen
-                        product = Product.query.filter_by(erp_id=erp_id_str).first()
+                # Produkt in lokaler DB suchen (über GUID)
+                product = Product.query.get(prod_guid)
 
-                        if product:
-                            product.name = name
-                            product.description = description
-                            product.price = price
-                            updated_count += 1
-                        else:
-                            product = Product(erp_id=erp_id_str, name=name, description=description, price=price)
-                            db.session.add(product)
-                            created_count += 1
-                    
-                    except Exception as e:
-                        print(f"Fehler bei Verarbeitung der Zeile {row}: {e}")
-                        errors_count += 1
+                if product:
+                    # Update
+                    product.name = name
+                    product.description = description
+                    product.price = price
+                    product.product_str_id = prod_str_id
+                    updated_count += 1
+                else:
+                    # Create
+                    product = Product(
+                        id=prod_guid,
+                        name=name,
+                        description=description,
+                        price=price,
+                        product_str_id=prod_str_id
+                    )
+                    db.session.add(product)
+                    created_count += 1
             
-            # --- TEIL 3: Produkte löschen ---
-            products_to_check = Product.query.filter(Product.erp_id != None).all()
-            for prod in products_to_check:
-                if prod.erp_id not in erp_ids_from_sync:
-                    db.session.delete(prod)
-                    deleted_count += 1
-
-            # --- TEIL 4: Änderungen in die DB schreiben ---
-            db.session.commit()
-            flash(f"ERP-Sync erfolgreich! Erstellt: {created_count}, Aktualisiert: {updated_count}, Gelöscht: {deleted_count}, Fehler: {errors_count}", 'success')
-
-        except FileNotFoundError:
-             flash(f"Fehler: Die Datei {csv_save_path} wurde nicht gefunden.")
-        except Exception as e:
-            db.session.rollback()
-            flash(f"Fehler (CSV) beim Einlesen der Datei oder DB-Update: {e}")
+            except Exception as e:
+                print(f"Fehler bei Verarbeitung von Produkt {item.get('ID')}: {e}")
+                errors_count += 1
         
-        # --- ENDE SYNC-LOGIK ---
+        # --- 3. Lokale Produkte löschen, die nicht mehr im ERP sind ---
+        # (Filtert alle lokalen Produkte, die eine GUID haben)
+        products_to_check = Product.query.filter(Product.id.like('________-____-____-____-____________')).all()
         
-        return redirect(url_for('admin_sync'))
+        for prod in products_to_check:
+            if prod.id not in erp_ids_from_sync:
+                db.session.delete(prod)
+                deleted_count += 1
 
-    # GET Request: Zeige einfach die Admin-Seite mit dem Button an
-    return render_template('admin_sync.html')
+        # --- 4. Änderungen in die DB schreiben ---
+        db.session.commit()
+        flash(f"ERP-API-Sync erfolgreich! Erstellt: {created_count}, Aktualisiert: {updated_count}, Gelöscht: {deleted_count}, Fehler: {errors_count}", 'success')
+
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Fehler (DB) beim Einlesen oder DB-Update: {e}")
+    
+    return redirect(url_for('index'))

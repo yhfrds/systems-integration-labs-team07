@@ -5,11 +5,24 @@
     <p>Your cart is empty.</p>
   {% else %}
     <table>
-      <tr><th>Product</th><th>Quantity</th><th>Subtotal</th><th></th></tr>
+      <tr><th>Product</th><th>Quantity</th><th>Stock (Real-time)</th><th>Subtotal</th><th></th></tr>
       {% for it in items %}
         <tr>
           <td>{{ it.product.name }}</td>
           <td>{{ it.quantity }}</td>
+          
+          <td>
+            {% if it.real_stock > 0 %}
+              {% if it.quantity > it.real_stock %}
+                <span style="color: red; font-weight: bold;">Nur {{ it.real_stock }} verfügbar!</span>
+              {% else %}
+                <span style="color: green;">Auf Lager ({{ it.real_stock }})</span>
+              {% endif %}
+            {% else %}
+              <span style="color: red; font-weight: bold;">Ausverkauft</span>
+            {% endif %}
+          </td>
+          
           <td>{{ "%.2f"|format(it.subtotal) }}</td>
           <td>
             <form method="post" action="{{ url_for('cart_remove', product_id=it.product.id) }}">
@@ -18,8 +31,9 @@
           </td>
         </tr>
       {% endfor %}
-      <tr><td colspan="2"><strong>Total</strong></td><td colspan="2">{{ "%.2f"|format(total) }}</td></tr>
+      <tr><td colspan="3"><strong>Total</strong></td><td colspan="2">{{ "%.2f"|format(total) }}</td></tr>
     </table>
+    
     {% if current_user.is_authenticated %}
       <form method="post" action="{{ url_for('checkout') }}">
         <button type="submit">Checkout</button>
