@@ -72,51 +72,71 @@ def get_erp_stock(product_guid_id):
 def get_or_create_erp_customer(user):
     """
     Sucht einen Kunden im ERP per E-Mail. 
-    Wenn nicht vorhanden, wird er erstellt.
+    Wenn nicht vorhanden (oder lokale ID ungültig ist), wird er erstellt.
     Gibt die ERP-Kunden-GUID zurück.
     Verwendet jetzt die globale Session mit Retry-Logik.
     """
-    # 1. Prüfen, ob wir die ID bereits im lokalen User gespeichert haben
+    erp_id = None
+
+    # 1. Prüfen, ob wir eine lokale ID haben UND ob sie im ERP noch gültig ist
     if user.erp_customer_id:
-        return user.erp_customer_id
+        try:
+            # Existenz-Check: Gibt es diesen Kunden wirklich noch?
+            check_url = f"{ERP_CUSTOMERS_URL}({user.erp_customer_id})"
+            check_response = erp_session.get(check_url, timeout=ERP_TIMEOUT)
+            
+            if check_response.status_code == 200:
+                # Ja, existiert noch -> verwenden
+                return user.erp_customer_id
+            else:
+                # Nein (z.B. 404) -> Die lokale ID ist veraltet (Zombie-ID)
+                print(f"Lokale Customer-ID {user.erp_customer_id} im ERP nicht gefunden. Suche neu...")
+                # Wir setzen erp_id zurück und machen weiter unten weiter
+                user.erp_customer_id = None
+                db.session.commit()
+                
+        except requests.exceptions.RequestException:
+            # Bei Verbindungsfehlern gehen wir auf Nummer sicher und brechen ab oder versuchen weiter
+            print("Verbindungsfehler beim ID-Check.")
+            return None
 
     try:
-        # 2. Im ERP nach E-Mail suchen
+        # 2. Im ERP nach E-Mail suchen (Falls wir keine ID haben oder sie ungültig war)
         filter_url = f"{ERP_CUSTOMERS_URL}?$filter=email eq '{user.email}'"
-        response = erp_session.get(filter_url, timeout=ERP_TIMEOUT) # Verwendet erp_session
+        response = erp_session.get(filter_url, timeout=ERP_TIMEOUT)
         response.raise_for_status()
         
         customers = response.json().get('value', [])
         
         if customers:
-            # 3. Fall A: Kunde gefunden
+            # 3. Fall A: Kunde gefunden (aber wir hatten die ID lokal noch nicht oder falsch)
             erp_id = customers[0]['ID']
+            print(f"Kunde im ERP gefunden: {erp_id}")
         else:
-            # 4. Fall B: Kunde nicht gefunden, neu im ERP anlegen
+            # 4. Fall B: Kunde nicht gefunden -> neu anlegen
             print(f"Erstelle neuen ERP-Kunden für {user.email}...")
             
             payload = {
                 "name": user.name,
                 "email": user.email,
                 "street": user.address.split(',')[0] if user.address else "N/A",
-                "city": "N/A", # Hier fehlen uns strukturierte Daten
-                "country_code": "DE" # Annahme
+                "city": "N/A", 
+                "country_code": "DE" 
             }
-            create_response = erp_session.post(ERP_CUSTOMERS_URL, json=payload, timeout=ERP_TIMEOUT) # Verwendet erp_session
+            create_response = erp_session.post(ERP_CUSTOMERS_URL, json=payload, timeout=ERP_TIMEOUT)
             create_response.raise_for_status()
             erp_id = create_response.json()['ID']
+            print(f"Neuer Kunde erstellt: {erp_id}")
             
-        # 5. ERP-ID im lokalen User-Modell für zukünftige Checkouts speichern
+        # 5. Neue ERP-ID lokal speichern
         user.erp_customer_id = erp_id
         db.session.commit()
         return erp_id
         
     except requests.exceptions.RequestException as e:
         print(f"Fehler beim Abrufen/Erstellen des ERP-Kunden: {e}")
-        db.session.rollback()
         return None
     except Exception as e:
-        db.session.rollback()
         print(f"Allgemeiner Fehler in get_or_create_erp_customer: {e}")
         return None
 
@@ -441,9 +461,60 @@ def checkout():
 @app.route('/orders')
 @login_required
 def orders():
-    # Zeigt die *lokal gespeicherten Kopien* der Bestellungen an
+    """
+    Zeigt die Bestellungen an UND synchronisiert sie mit dem ERP.
+    Wenn eine Bestellung im ERP gelöscht wurde, wird sie auch lokal entfernt.
+    """
+    
+    # 1. SYNC-LOGIK: Nur ausführen, wenn der User eine ERP-Kunden-ID hat
+    if current_user.erp_customer_id:
+        try:
+            # Abfrage aller Bestellungen dieses Kunden aus dem ERP
+            # OData-Filter: customer_ID eq <GUID>
+            url = f"{ERP_ORDERS_URL}?$filter=customer_ID eq {current_user.erp_customer_id}"
+            
+            # Wir nutzen die globale Session (mit Retry-Logik)
+            response = erp_session.get(url, timeout=ERP_TIMEOUT)
+            
+            if response.status_code == 200:
+                erp_data = response.json().get('value', [])
+                
+                # Wir erstellen ein Set (Menge) aller gültigen Order-GUIDs aus dem ERP
+                valid_erp_order_ids = {order['ID'] for order in erp_data}
+                
+                # Wir holen alle lokalen Bestellungen, die bereits eine ERP-ID haben
+                local_orders = Order.query.filter(
+                    Order.user_id == current_user.id,
+                    Order.erp_order_id != None
+                ).all()
+                
+                deleted_count = 0
+                
+                for local_o in local_orders:
+                    # WICHTIG: Wenn die lokale ID nicht im ERP-Set ist -> LÖSCHEN
+                    if local_o.erp_order_id not in valid_erp_order_ids:
+                        db.session.delete(local_o)
+                        deleted_count += 1
+                        
+                        # (Optional) Auch zugehörige OrderItems löschen?
+                        # SQLAlchemy erledigt das meist automatisch (Cascade), 
+                        # aber es schadet nicht, es sauber zu halten, falls Items keine Cascade haben.
+                        for item in local_o.items:
+                            db.session.delete(item)
+
+                if deleted_count > 0:
+                    db.session.commit()
+                    flash(f"Synchronisierung: {deleted_count} gelöschte Bestellung(en) wurden aus Ihrer Liste entfernt.", "info")
+            
+        except Exception as e:
+            # Wenn das ERP nicht erreichbar ist, machen wir nichts (behalten die lokalen Daten)
+            # Wir wollen nicht, dass die Seite abstürzt, nur weil der Sync fehlschlägt.
+            print(f"Fehler beim Order-Sync: {e}")
+
+    # 2. ANZEIGE: Lokale Datenbank abfragen (jetzt bereinigt)
     my_orders = Order.query.filter_by(
         user_id=current_user.id).order_by(Order.created_at.desc()).all()
+        
     return render_template('orders.html', orders=my_orders)
 
 @app.route('/order/<int:order_id>')
@@ -565,7 +636,7 @@ def perform_erp_sync():
 
 
 # +++ NEUER HINTERGRUND-JOB +++
-@scheduler.task('interval', id='erp_sync_job', hours=1, misfire_grace_time=900)
+@scheduler.task('interval', id='erp_sync_job', minutes=5, misfire_grace_time=900)
 def scheduled_sync_job():
     """
     Führt den automatischen ERP-Produktsync jede Stunde im Hintergrund aus.

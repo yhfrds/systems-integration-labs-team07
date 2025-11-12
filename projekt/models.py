@@ -47,7 +47,7 @@ class Order(db.Model):
     total_price = db.Column(db.Numeric(12, 2), nullable=False)
     status = db.Column(db.String(50), default='pending') # Status aus dem Webshop (z.B. "Submitted to ERP")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    items = db.relationship('OrderItem', backref='order', lazy=True)
+    items = db.relationship('OrderItem', backref='order', lazy=True, cascade="all, delete-orphan")
 
 
 class OrderItem(db.Model):
