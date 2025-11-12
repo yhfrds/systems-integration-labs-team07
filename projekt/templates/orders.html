@@ -1,18 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
-  <h2>My Orders</h2>
+  <h2>My Orders (Live from ERP)</h2>
   {% if not orders %}
-    <p>No orders yet.</p>
+    <p>No orders found in ERP.</p>
   {% else %}
     <table>
-      <tr><th>ID</th><th>Created</th><th>Total</th><th>Status</th><th>View</th></tr>
+      <tr><th>Order ID</th><th>Date</th><th>Total</th><th>Status Code</th><th>View</th></tr>
       {% for o in orders %}
         <tr>
-          <td>{{ o.id }}</td>
-          <td>{{ o.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-          <td>{{ "%.2f"|format(o.total_price) }}</td>
-          <td>{{ o.status }}</td>
-          <td><a href="{{ url_for('order_detail', order_id=o.id) }}">Details</a></td>
+          <td>{{ o.orderID }}</td> 
+          <td>{{ o.createdAt[:10] }}</td> <td>{{ "%.2f"|format(o.orderAmount) }} EUR</td>
+          <td>
+            {% if o.orderStatus_status == 10 %}New
+            {% elif o.orderStatus_status == 20 %}Picked
+            {% elif o.orderStatus_status == 30 %}Shipped
+            {% elif o.orderStatus_status == 40 %}Completed
+            {% elif o.orderStatus_status == -10 %}Canceled
+            {% else %}{{ o.orderStatus_status }}{% endif %}
+          </td>
+          <td><a href="{{ url_for('order_detail', order_id=o.ID) }}">Details</a></td>
         </tr>
       {% endfor %}
     </table>

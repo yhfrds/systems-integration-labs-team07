@@ -15,7 +15,7 @@ from datetime import datetime
 
 # Importiert app, db und scheduler aus __init__.py
 from . import app, db, scheduler 
-from .models import User, Product, Order, OrderItem
+from .models import User, Product
 
 
 # --- NEUE KONFIGURATION FÜR ECHTZEIT-API (RPC) ---
@@ -119,9 +119,11 @@ def get_or_create_erp_customer(user):
             payload = {
                 "name": user.name,
                 "email": user.email,
-                "street": user.address.split(',')[0] if user.address else "N/A",
-                "city": "N/A", 
-                "country_code": "DE" 
+                "street": user.street,
+                "houseNumber": user.house_number, # ERP erwartet camelCase
+                "postalCode": user.zip_code,      # ERP erwartet 'postalCode'
+                "city": user.city,
+                "country_code": "DE"
             }
             create_response = erp_session.post(ERP_CUSTOMERS_URL, json=payload, timeout=ERP_TIMEOUT)
             create_response.raise_for_status()
@@ -140,6 +142,44 @@ def get_or_create_erp_customer(user):
         print(f"Allgemeiner Fehler in get_or_create_erp_customer: {e}")
         return None
 
+def update_erp_customer(user):
+    """
+    Sendet lokale Änderungen (Name, Adresse, Email) an das ERP-System.
+    Nutzt PATCH um den bestehenden Datensatz zu aktualisieren.
+    """
+    if not user.erp_customer_id:
+        # Wenn noch keine ID da ist, erstellen wir ihn erst einmal
+        return get_or_create_erp_customer(user)
+
+    try:
+        url = f"{ERP_CUSTOMERS_URL}({user.erp_customer_id})"
+        
+        payload = {
+            "name": user.name,
+            "email": user.email,
+            "street": user.street,
+            "houseNumber": user.house_number,
+            "postalCode": user.zip_code,
+            "city": user.city,
+            "country_code": "DE"
+        }
+        
+        # PATCH aktualisiert nur die gesendeten Felder
+        response = erp_session.patch(url, json=payload, timeout=ERP_TIMEOUT)
+        
+        if response.status_code == 404:
+            # Kunde im ERP gelöscht? -> ID entfernen und neu anlegen
+            user.erp_customer_id = None
+            db.session.commit()
+            return get_or_create_erp_customer(user)
+            
+        response.raise_for_status()
+        print(f"ERP-Kunde {user.erp_customer_id} aktualisiert.")
+        return True
+        
+    except Exception as e:
+        print(f"Fehler beim Aktualisieren des ERP-Kunden: {e}")
+        return False
 
 # Helper: cart operations (stored in session)
 def get_cart():
@@ -168,17 +208,31 @@ def register():
     if request.method == 'POST':
         name = request.form['name'].strip()
         email = request.form['email'].strip().lower()
-        address = request.form.get('address', '').strip()
         password = request.form['password']
+
+        street = request.form.get('street', '').strip()
+        house_number = request.form.get('house_number', '').strip()
+        zip_code = request.form.get('zip_code', '').strip()
+        city = request.form.get('city', '').strip()
+        
         if User.query.filter_by(email=email).first():
             flash('Email already registered')
             return redirect(url_for('register'))
-        u = User(name=name, email=email, address=address)
+            
+        u = User(name=name, email=email, street=street, house_number=house_number, zip_code=zip_code, city=city)
         u.set_password(password)
         db.session.add(u)
         db.session.commit()
+        
+        # +++ SYNC: Sofort im ERP anlegen +++
+        try:
+            get_or_create_erp_customer(u)
+        except Exception as e:
+            print(f"Warnung: ERP-Sync bei Registrierung fehlgeschlagen: {e}")
+            # Wir lassen den User trotzdem rein, Sync passiert spätestens beim Checkout
+        
         login_user(u)
-        flash('Registered and logged in')
+        flash('Registered and logged in (ERP synced)')
         return redirect(url_for('index'))
     return render_template('register.html')
 
@@ -188,10 +242,20 @@ def login():
         email = request.form['email'].strip().lower()
         password = request.form['password']
         user = User.query.filter_by(email=email).first()
+        
         if not user or not user.check_password(password):
             flash('Invalid credentials')
             return redirect(url_for('login'))
+            
         login_user(user)
+        
+        # +++ SYNC: Sicherstellen, dass ERP-Verknüpfung aktuell ist +++
+        # (Läuft im Hintergrund, Fehler werden ignoriert, um Login nicht zu blockieren)
+        try:
+            get_or_create_erp_customer(user)
+        except:
+            pass 
+            
         flash('Logged in')
         return redirect(url_for('index'))
     return render_template('login.html')
@@ -207,42 +271,47 @@ def logout():
 @login_required
 def profile():
     if request.method == 'POST':
-        # Formulardaten abrufen
         name = request.form['name'].strip()
-        address = request.form.get('address', '').strip()
         email = request.form['email'].strip().lower()
+        street = request.form.get('street', '').strip()
+        house_number = request.form.get('house_number', '').strip()
+        zip_code = request.form.get('zip_code', '').strip()
+        city = request.form.get('city', '').strip()
         current_password = request.form['current_password']
         new_password = request.form.get('new_password')
 
-        # 1. Aktuelles Passwort überprüfen
         if not current_user.check_password(current_password):
             flash('Incorrect current password. No changes were made.')
             return redirect(url_for('profile'))
 
-        # 2. Allgemeine Informationen aktualisieren
+        # Lokale Updates
         current_user.name = name
-        current_user.address = address
+        current_user.street = street
+        current_user.house_number = house_number
+        current_user.zip_code = zip_code
+        current_user.city = city
         update_made = True
 
-        # 3. E-Mail-Adresse aktualisieren (falls geändert)
         if current_user.email != email:
-            # Prüfen, ob die neue E-Mail bereits vergeben ist
             if User.query.filter(User.email == email, User.id != current_user.id).first():
-                flash('This email address is already in use by another account.')
+                flash('This email address is already in use.')
                 return redirect(url_for('profile'))
             current_user.email = email
             update_made = True
 
-        # 4. Passwort aktualisieren (falls ein neues eingegeben wurde)
         if new_password:
             current_user.set_password(new_password)
             update_made = True
         
-        # 5. Änderungen in der Datenbank speichern
         try:
             if update_made:
                 db.session.commit()
-                flash('Profile updated successfully.')
+                
+                # +++ SYNC: Änderungen an ERP senden +++
+                if update_erp_customer(current_user):
+                    flash('Profile updated successfully (Local & ERP).')
+                else:
+                    flash('Profile updated locally, but ERP sync failed.', 'warning')
             else:
                 flash('No changes detected.')
         except Exception as e:
@@ -405,28 +474,8 @@ def checkout():
         
         if response.status_code == 201:
             # --- ERFOLG ---
-            erp_order_guid = response.json().get('ID')
+            # WICHTIG: Wir speichern NICHTS mehr lokal. Das ERP ist die einzige Wahrheit.
             
-            # --- 4. Lokale Kopie für "My Orders" speichern ---
-            o = Order(
-                user_id=current_user.id, 
-                total_price=total, 
-                status='Submitted to ERP', # Neuer Status
-                erp_order_id=erp_order_guid
-            )
-            db.session.add(o)
-            db.session.commit() # Commit, um 'o.id' zu bekommen
-            
-            for it in local_items_for_order:
-                oi = OrderItem(
-                    order_id=o.id, 
-                    product_id=it['product'].id,
-                    quantity=it['quantity'], 
-                    unit_price=it['unit_price']
-                )
-                db.session.add(oi)
-            
-            db.session.commit()
             clear_cart()
             flash('Bestellung erfolgreich an ERP übermittelt!')
             return redirect(url_for('orders'))
@@ -462,69 +511,61 @@ def checkout():
 @login_required
 def orders():
     """
-    Zeigt die Bestellungen an UND synchronisiert sie mit dem ERP.
-    Wenn eine Bestellung im ERP gelöscht wurde, wird sie auch lokal entfernt.
+    Holt die Bestellliste LIVE aus dem ERP-System (RPC).
+    Keine lokale Speicherung.
     """
+    my_orders = []
     
-    # 1. SYNC-LOGIK: Nur ausführen, wenn der User eine ERP-Kunden-ID hat
     if current_user.erp_customer_id:
         try:
-            # Abfrage aller Bestellungen dieses Kunden aus dem ERP
-            # OData-Filter: customer_ID eq <GUID>
-            url = f"{ERP_ORDERS_URL}?$filter=customer_ID eq {current_user.erp_customer_id}"
-            
-            # Wir nutzen die globale Session (mit Retry-Logik)
+            # Filter nach Customer ID im ERP
+            url = f"{ERP_ORDERS_URL}?$filter=customer_ID eq {current_user.erp_customer_id}&$orderby=createdAt desc"
             response = erp_session.get(url, timeout=ERP_TIMEOUT)
             
             if response.status_code == 200:
-                erp_data = response.json().get('value', [])
+                my_orders = response.json().get('value', [])
+            else:
+                flash(f"Konnte Bestellungen nicht laden (ERP Status: {response.status_code})", "warning")
                 
-                # Wir erstellen ein Set (Menge) aller gültigen Order-GUIDs aus dem ERP
-                valid_erp_order_ids = {order['ID'] for order in erp_data}
-                
-                # Wir holen alle lokalen Bestellungen, die bereits eine ERP-ID haben
-                local_orders = Order.query.filter(
-                    Order.user_id == current_user.id,
-                    Order.erp_order_id != None
-                ).all()
-                
-                deleted_count = 0
-                
-                for local_o in local_orders:
-                    # WICHTIG: Wenn die lokale ID nicht im ERP-Set ist -> LÖSCHEN
-                    if local_o.erp_order_id not in valid_erp_order_ids:
-                        db.session.delete(local_o)
-                        deleted_count += 1
-                        
-                        # (Optional) Auch zugehörige OrderItems löschen?
-                        # SQLAlchemy erledigt das meist automatisch (Cascade), 
-                        # aber es schadet nicht, es sauber zu halten, falls Items keine Cascade haben.
-                        for item in local_o.items:
-                            db.session.delete(item)
-
-                if deleted_count > 0:
-                    db.session.commit()
-                    flash(f"Synchronisierung: {deleted_count} gelöschte Bestellung(en) wurden aus Ihrer Liste entfernt.", "info")
-            
         except Exception as e:
-            # Wenn das ERP nicht erreichbar ist, machen wir nichts (behalten die lokalen Daten)
-            # Wir wollen nicht, dass die Seite abstürzt, nur weil der Sync fehlschlägt.
-            print(f"Fehler beim Order-Sync: {e}")
+            flash(f"Verbindungsfehler zum ERP beim Laden der Bestellungen: {e}", "danger")
 
-    # 2. ANZEIGE: Lokale Datenbank abfragen (jetzt bereinigt)
-    my_orders = Order.query.filter_by(
-        user_id=current_user.id).order_by(Order.created_at.desc()).all()
-        
     return render_template('orders.html', orders=my_orders)
 
-@app.route('/order/<int:order_id>')
+@app.route('/order/<string:order_id>') # WICHTIG: Jetzt string (GUID) statt int
 @login_required
 def order_detail(order_id):
-    # Zeigt Details der *lokal gespeicherten Kopie* an
-    o = Order.query.get_or_404(order_id)
-    if o.user_id != current_user.id:
-        abort(403)
-    return render_template('order_detail.html', order=o)
+    """
+    Holt Details einer Bestellung LIVE aus dem ERP.
+    Nutzt $expand, um Items und Produktnamen in einem Call zu laden.
+    """
+    order_data = None
+    
+    try:
+        # OData Deep Expand: Order -> Items -> Product
+        # Wir brauchen 'items' und darin das 'product', um den Namen anzuzeigen
+        url = f"{ERP_ORDERS_URL}({order_id})?$expand=items($expand=product)"
+        
+        response = erp_session.get(url, timeout=ERP_TIMEOUT)
+        
+        if response.status_code == 200:
+            order_data = response.json()
+            
+            # Sicherheitscheck: Gehört die Bestellung wirklich mir?
+            # Wir vergleichen die ERP-Customer-ID der Bestellung mit der des Users
+            if order_data.get('customer_ID') != current_user.erp_customer_id:
+                abort(403) # Forbidden
+        elif response.status_code == 404:
+            abort(404)
+        else:
+            flash(f"ERP Fehler: {response.status_code}", "danger")
+            return redirect(url_for('orders'))
+            
+    except Exception as e:
+        flash(f"Verbindungsfehler: {e}", "danger")
+        return redirect(url_for('orders'))
+
+    return render_template('order_detail.html', order=order_data)
 
 @app.route('/order/<int:order_id>/status', methods=['POST'])
 def change_status(order_id):
