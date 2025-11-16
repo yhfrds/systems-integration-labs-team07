@@ -14,12 +14,12 @@
           <td>
             {% if it.real_stock > 0 %}
               {% if it.quantity > it.real_stock %}
-                <span style="color: red; font-weight: bold;">Nur {{ it.real_stock }} verfügbar!</span>
+                <span style="color: red; font-weight: bold;">only {{ it.real_stock }} avialable!</span>
               {% else %}
-                <span style="color: green;">Auf Lager ({{ it.real_stock }})</span>
+                <span style="color: green;">in Stock ({{ it.real_stock }})</span>
               {% endif %}
             {% else %}
-              <span style="color: red; font-weight: bold;">Ausverkauft</span>
+              <span style="color: red; font-weight: bold;">sold out</span>
             {% endif %}
           </td>
           

@@ -7,7 +7,7 @@
   <h3>Items</h3>
   <table>
     <tr><th>Product</th><th>Qty</th><th>Item Price</th></tr>
-    {% for it in order.items %}
+    {% for it in order['items'] %}
       <tr>
         <td>{{ it.product.name }}</td>
         <td>{{ it.quantity }}</td>
