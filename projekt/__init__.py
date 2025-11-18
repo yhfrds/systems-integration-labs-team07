@@ -26,4 +26,4 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 # Wichtig: Die Routen AM ENDE importieren, NACHDEM alles andere definiert ist
-from . import routes, routes_products
+from . import routes, routes_auth, routes_products  # noqa: F401
