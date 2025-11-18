@@ -12,12 +12,15 @@
     <div><h1><a href="{{ url_for('index') }}">Bikes & Strikes</a></h1></div>
     <nav>
       <a href="{{ url_for('index') }}">Products</a>
-      <a href="{{ url_for('product_new') }}">Add Product</a>
       <a href="{{ url_for('cart_view') }}">Cart ({{ session.get('cart')|length if session.get('cart') else 0 }})</a>
       {% if current_user.is_authenticated %}
         <a href="{{ url_for('orders') }}">My Orders</a>
         <a href="{{ url_for('profile') }}">Profile</a>
-        <a href="{{ url_for('admin_sync') }}" style="color: #FF8C00; font-weight: bold;">Sync ERP</a>
+        
+        <form action="{{ url_for('admin_sync') }}" method="POST" style="display: inline; margin: 0; padding: 0;">
+          <button type="submit" style="background:none; border:none; padding:0; color:#FF8C00; font-weight:bold; cursor:pointer; font-size:inherit; font-family:inherit; text-decoration: underline;">Sync ERP</button>
+        </form>
+        
         <a href="{{ url_for('logout') }}">Logout</a>
       {% else %}
         <a href="{{ url_for('register') }}">Register</a>

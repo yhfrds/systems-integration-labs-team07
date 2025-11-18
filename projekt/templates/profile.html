@@ -6,8 +6,20 @@
       <input name="name" value="{{ current_user.name }}" required/>
     </label><br/><br/>
 
-    <label>Address:<br/>
-      <textarea name="address">{{ current_user.address }}</textarea>
+    <label>Street:<br/>
+        <input name="street" value="{{ current_user.street }}" required>
+    </label><br/><br/>
+    
+    <label>House Number:<br/>
+        <input name="house_number" value="{{ current_user.house_number }}" required>
+    </label><br/><br/>
+    
+    <label>Zip Code:<br/>
+        <input name="zip_code" value="{{ current_user.zip_code }}" required>
+    </label><br/><br/>
+    
+    <label>City:<br/>
+        <input name="city" value="{{ current_user.city }}" required>
     </label><br/><br/>
 
     <hr>

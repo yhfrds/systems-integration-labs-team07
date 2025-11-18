@@ -2,22 +2,20 @@
 {% block content %}
   <h2>Products</h2>
   {% if not products %}
-    <p>No products yet — add some!</p>
   {% endif %}
   <table>
     <tr><th>Name</th><th>Description</th><th>Price</th><th>Actions</th></tr>
     {% for p in products %}
       <tr>
-        <td>{{ p.name }}</td>
+        <td>
+          <a href="{{ url_for('product_detail', product_id=p.id) }}">{{ p.name }}</a>
+        </td>
         <td>{{ p.description }}</td>
         <td>{{ "%.2f"|format(p.price) }}</td>
         <td>
           <form style="display:inline" method="post" action="{{ url_for('cart_add', product_id=p.id) }}">
             <input type="number" name="quantity" value="1" min="1" style="width:60px"/>
             <button type="submit">Add to cart</button>
-          </form>
-          <form style="display:inline" method="post" action="{{ url_for('product_delete', product_id=p.id) }}" onsubmit="return confirm('Delete product?');">
-            <button type="submit">Delete</button>
           </form>
         </td>
       </tr>
