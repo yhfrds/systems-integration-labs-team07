@@ -1,7 +1,10 @@
-from projekt.models import User  # Now db exists, safe to import
+# projekt/__init__.py
+
+
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
+from flask_apscheduler import APScheduler  # +++ NEU +++
 
 # App und Konfiguration initialisieren
 app = Flask(__name__)
@@ -10,23 +13,22 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///shop.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Datenbank- und Login-Erweiterungen initialisieren
-db = SQLAlchemy()
-db.init_app(app)
-
-login_manager = LoginManager()
-login_manager.init_app(app)
+db = SQLAlchemy(app)
+login_manager = LoginManager(app)
 login_manager.login_view = 'login'  # Name der Login-Funktion/Route
 
-# --- Import Models AFTER db is initialized ---
+# +++ NEU: Scheduler initialisieren (MUSS VOR routes-Import stehen) +++
+scheduler = APScheduler()
 
-# User Loader
+# Der User Loader wird hier definiert, da er das User-Modell benötigt
 
 
 @login_manager.user_loader
 def load_user(user_id):
+    from .models import User
     return User.query.get(int(user_id))
 
-# --- Import routes AFTER app/db are ready ---
+# Wichtig: Die Routen AM ENDE importieren, NACHDEM alles andere definiert ist
 
 
 def register_routes(app):
