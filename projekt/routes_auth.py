@@ -1,6 +1,6 @@
 from flask import render_template, request, redirect, url_for, flash
 from flask_login import login_user, logout_user, login_required, current_user
-from .routes import get_or_create_erp_customer, update_erp_customer
+from .routes_helpers import get_or_create_erp_customer, update_erp_customer
 
 # Imports app, db, and scheduler from __init__.py
 from . import app, db

@@ -26,4 +26,4 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 # Wichtig: Die Routen AM ENDE importieren, NACHDEM alles andere definiert ist
-from . import routes, routes_auth, routes_erp_sync, routes_products, routes_carts_and_orders  
+from . import routes_auth, routes_erp_sync, routes_helpers, routes_products, routes_carts_and_orders  

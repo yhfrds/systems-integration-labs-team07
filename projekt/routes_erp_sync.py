@@ -5,7 +5,7 @@ from decimal import Decimal
 import requests
 from datetime import datetime
 
-from projekt.routes import erp_session, ERP_PRODUCTS_URL, ERP_TIMEOUT
+from projekt.routes_helpers import erp_session, ERP_PRODUCTS_URL, ERP_TIMEOUT
 
 
 # Imports app, db, and scheduler from __init__.py
