@@ -2,12 +2,10 @@ from flask import render_template, request, redirect, url_for, flash, abort
 from flask_login import login_required, current_user
 from decimal import Decimal
 
-# +++ NEW IMPORTS FOR API, SYNC & RETRY LOGIC +++
 import requests
 from datetime import datetime
 
 from projekt.routes import ERP_ORDERS_URL, ERP_TIMEOUT, clear_cart, get_cart, get_erp_stock, get_or_create_erp_customer, save_cart, erp_session
-# +++ END NEW IMPORTS +++
 
 # Imports app, db, and scheduler from __init__.py
 from . import app, db
