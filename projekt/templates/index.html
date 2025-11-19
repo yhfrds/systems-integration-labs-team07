@@ -8,7 +8,7 @@
     {% for p in products %}
       <tr>
         <td>
-          <a href="{{ url_for('product_detail', product_id=p.id) }}">{{ p.name }}</a>
+          <a href="{{ url_for('product_detail', product_id=p.ID) }}">{{ p.name }}</a>
         </td>
         <td>{{ p.description }}</td>
         <td>{{ "%.2f"|format(p.price) }}</td>
