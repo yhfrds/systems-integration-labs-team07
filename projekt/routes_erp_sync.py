@@ -1,3 +1,6 @@
+# This code will be deactivated in favor of the new sync logic and in-memory caching implemented in cache.py and routes_products.py
+
+'''
 from flask import render_template, request, redirect, url_for, flash, abort
 from flask_login import login_required
 from decimal import Decimal
@@ -139,3 +142,4 @@ def admin_sync():
         flash(f"Error during manual sync: {e}", 'danger')
 
     return redirect(url_for('index'))
+'''
