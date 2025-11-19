@@ -63,7 +63,80 @@ def get_erp_stock(product_guid_id):
     except requests.exceptions.RequestException as e:
         print(f"ERP Stock-Check Error for {product_guid_id}: {e}")
         return 0 # Assume "Out of Stock" in case of error
+    
+def get_or_create_erp_customer(user):
+    """
+    Always checks ERP directly by email.
+    If customer exists → return ERP customer data.
+    If not → create it and return the new data.
+    """
 
+    try:
+        # 1. Search ERP by email
+        filter_url = f"{ERP_CUSTOMERS_URL}?$filter=email eq '{user.email}'"
+        response = requests.get(filter_url, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
+        response.raise_for_status()
+        customers = response.json().get('value', [])
+
+        if customers:
+            # Customer exists
+            return customers[0]
+
+        # Customer not found → create
+        payload = {
+            "name": user.name,
+            "email": user.email,
+            "street": user.street,
+            "houseNumber": user.house_number,
+            "postalCode": user.zip_code,
+            "city": user.city,
+            "country_code": "DE"
+        }
+
+        create_res = requests.post(ERP_CUSTOMERS_URL, json=payload, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
+        create_res.raise_for_status()
+        return create_res.json()
+
+    except Exception as e:
+        print(f"ERP error in get_or_create_erp_customer: {e}")
+        return None
+
+
+def update_erp_customer(user):
+    """
+    Always updates ERP by email.
+    If not found → creates new record.
+    Returns ERP customer data if successful, None on error.
+    """
+
+    try:
+        # Search ERP by email
+        erp_customer = get_or_create_erp_customer(user)
+        if not erp_customer:
+            return None
+
+        erp_id = erp_customer["ID"]
+        url = f"{ERP_CUSTOMERS_URL}({erp_id})"
+
+        payload = {
+            "name": user.name,
+            "email": user.email,
+            "street": user.street,
+            "houseNumber": user.house_number,
+            "postalCode": user.zip_code,
+            "city": user.city,
+            "country_code": "DE"
+        }
+
+        response = requests.patch(url, json=payload, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
+        response.raise_for_status()
+        return response.json()
+
+    except Exception as e:
+        print(f"ERP error in update_erp_customer: {e}")
+        return None
+
+'''
 def get_or_create_erp_customer(user):
     """
     Looks for a customer in the ERP by email. 
@@ -136,7 +209,7 @@ def get_or_create_erp_customer(user):
     except Exception as e:
         print(f"General error in get_or_create_erp_customer: {e}")
         return None
-
+        
 def update_erp_customer(user):
     """
     Sends local changes (Name, Address, Email) to the ERP system.
@@ -175,7 +248,8 @@ def update_erp_customer(user):
     except Exception as e:
         print(f"Error while updating the ERP customer: {e}")
         return False
-
+'''
+        
 # Helper: cart operations (stored in session)
 def get_cart():
     return session.get('cart', {})  # {product_id: quantity}
