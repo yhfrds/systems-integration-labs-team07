@@ -80,6 +80,8 @@ def get_or_create_erp_customer(user):
 
         if customers:
             # Customer exists
+            user.erp_customer_id = customers[0]['ID']
+            db.session.commit()
             return customers[0]
 
         # Customer not found → create
