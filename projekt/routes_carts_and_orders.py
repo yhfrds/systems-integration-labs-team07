@@ -150,7 +150,7 @@ def checkout():
 
     # --- 3. Send order to ERP (Deep Insert) ---
     order_payload = {
-        "customer_ID": erp_customer_id,
+        "customer_ID": erp_customer_id['ID'],
         "orderDate": datetime.utcnow().strftime('%Y-%m-%d'),
         "currency_code": "EUR", # Assumption
         "orderAmount": str(total), # Field added for ERP
