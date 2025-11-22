@@ -9,7 +9,7 @@ from projekt.routes_helpers import ERP_ORDERS_URL, ERP_TIMEOUT, clear_cart, get_
 
 # Imports app, db, and scheduler from __init__.py
 from . import app, db
-# from .models import Product
+
 
 def get_product(product_id):
     url = f"{ERP_PRODUCTS_URL}?$filter=ID eq {product_id}"

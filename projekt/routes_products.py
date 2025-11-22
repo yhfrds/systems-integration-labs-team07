@@ -6,7 +6,7 @@ import json
 
 # Imports app, db, and scheduler from __init__.py
 from . import app
-# from .models import Product
+
 from .cache import cache_get, cache_set
 
 ttl_time = 45
