@@ -5,16 +5,29 @@ from decimal import Decimal
 import requests
 from datetime import datetime
 
-from projekt.routes_helpers import ERP_ORDERS_URL, ERP_TIMEOUT, clear_cart, get_cart, get_erp_stock, get_or_create_erp_customer, save_cart, erp_session
+from projekt.routes_helpers import ERP_ORDERS_URL, ERP_TIMEOUT, clear_cart, get_cart, get_erp_stock, get_or_create_erp_customer, save_cart, erp_session, ERP_PRODUCTS_URL
 
 # Imports app, db, and scheduler from __init__.py
 from . import app, db
-from .models import Product
+# from .models import Product
+
+def get_product(product_id):
+    url = f"{ERP_PRODUCTS_URL}?$filter=ID eq {product_id}"
+    response = erp_session.get(url, timeout=ERP_TIMEOUT)
+    response.raise_for_status()
+
+    data = response.json().get('value', [])
+    if not data:
+        abort(404)
+
+    return data[0]
 
 # --- Cart & Order Routes ---
 @app.route('/cart/add/<string:product_id>', methods=['POST']) # CHANGED: int -> string
 def cart_add(product_id):
-    product = Product.query.get_or_404(product_id) # Now searches by GUID
+    
+    product = get_product(product_id)
+
     cart = get_cart()
     qty = int(request.form.get('quantity', 1))
     if qty < 1: qty = 1
@@ -23,16 +36,16 @@ def cart_add(product_id):
     current_in_cart = cart.get(product_id, 0)
     total_wanted = current_in_cart + qty
     
-    real_stock = get_erp_stock(product.id)
+    real_stock = get_erp_stock(product['ID'])
     
     if total_wanted > real_stock:
-        flash(f"Error: Not enough stock for '{product.name}'. Available: {real_stock}, You wanted: {total_wanted}")
+        flash(f"Error: Not enough stock for '{product['name']}'. Available: {real_stock}, You wanted: {total_wanted}")
         return redirect(request.referrer or url_for('index'))
     # +++ END Stock check +++
     
     cart[product_id] = total_wanted # Uses GUID as key
     save_cart(cart)
-    flash(f"Added {qty} × {product.name} to cart")
+    flash(f"Added {qty} × {product['name']} to cart")
     return redirect(request.referrer or url_for('index'))
 
 @app.route('/cart')
@@ -44,7 +57,7 @@ def cart_view():
     cart_changed = False
     for pid_str_guid, qty in list(cart.items()): # list() to create a copy, so pop works
         # pid_str_guid is now the GUID
-        p = Product.query.get(pid_str_guid)
+        p = get_product(pid_str_guid)
         if not p:
             # Product no longer exists in our DB (perhaps removed by sync)
             cart.pop(pid_str_guid, None)
@@ -52,9 +65,9 @@ def cart_view():
             continue
         
         # +++ NEW: Get real-time stock for the view +++
-        real_stock = get_erp_stock(p.id)
+        real_stock = get_erp_stock(p['ID'])
         
-        subtotal = (p.price * qty)
+        subtotal = (p['price'] * qty)
         items.append({
             'product': p, 
             'quantity': qty, 
@@ -113,7 +126,7 @@ def checkout():
     
     # list(cart.items()) fixes the "RuntimeError: dictionary changed size"
     for pid_guid, qty in list(cart.items()): 
-        p = Product.query.get(pid_guid)
+        p = get_product(pid_guid)
         if not p:
             flash(f"A product in the cart is no longer available and has been removed.")
             cart.pop(pid_guid, None) # This line requires list() above
@@ -121,18 +134,18 @@ def checkout():
             return redirect(url_for('cart_view'))
 
         # --- REAL-TIME STOCK CHECK ---
-        real_stock = get_erp_stock(p.id)
+        real_stock = get_erp_stock(p['ID'])
         if qty > real_stock:
             flash(f"Stock for '{p.name}' insufficient (Available: {real_stock}). Order canceled.")
             return redirect(url_for('cart_view'))
         
         # +++ PRICE CALCULATION +++
-        subtotal = (p.price * qty)
+        subtotal = (p['price'] * qty)
         total += subtotal
         
         # For ERP payload
         erp_items_payload.append({
-            "product_ID": p.id, # The product GUID
+            "product_ID": p['ID'], # The product GUID
             "quantity": qty,
             "itemAmount": str(subtotal) # Field added for ERP
         })
@@ -141,7 +154,7 @@ def checkout():
         local_items_for_order.append({
             'product': p, 
             'quantity': qty, 
-            'unit_price': p.price
+            'unit_price': p['price']
         })
 
     if not erp_items_payload:
