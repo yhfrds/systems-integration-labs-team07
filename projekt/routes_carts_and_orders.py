@@ -5,6 +5,7 @@ from decimal import Decimal
 import requests
 from datetime import datetime
 
+# We import erp_session here to use the global session with retry logic
 from projekt.routes_helpers import ERP_ORDERS_URL, ERP_TIMEOUT, clear_cart, get_cart, get_erp_stock, get_or_create_erp_customer, save_cart, erp_session, ERP_PRODUCTS_URL
 
 # Imports app, db, and scheduler from __init__.py
@@ -12,27 +13,43 @@ from . import app, db
 
 
 def get_product(product_id):
-    url = f"{ERP_PRODUCTS_URL}?$filter=ID eq {product_id}"
-    response = erp_session.get(url, timeout=ERP_TIMEOUT)
-    response.raise_for_status()
+    """
+    Attempts to load a product from the ERP.
+    Returns None if the ERP is unreachable or the product is not found.
+    """
+    try:
+        url = f"{ERP_PRODUCTS_URL}?$filter=ID eq {product_id}"
+        # We use erp_session which already has retry logic.
+        # We must still catch the final ConnectionError if it fails.
+        response = erp_session.get(url, timeout=ERP_TIMEOUT)
+        response.raise_for_status()
 
-    data = response.json().get('value', [])
-    if not data:
-        abort(404)
+        data = response.json().get('value', [])
+        if not data:
+            return None
 
-    return data[0]
+        return data[0]
+    except requests.exceptions.RequestException as e:
+        print(f"ERP Connection Error in get_product: {e}")
+        return None
 
 # --- Cart & Order Routes ---
-@app.route('/cart/add/<string:product_id>', methods=['POST']) # CHANGED: int -> string
+@app.route('/cart/add/<string:product_id>', methods=['POST'])
 def cart_add(product_id):
     
     product = get_product(product_id)
+
+    # +++ NEW: Check for ERP availability +++
+    if not product:
+        flash("The ERP system is currently unreachable. The product could not be added to the cart.", "danger")
+        return redirect(url_for('index'))
+    # +++ END NEW +++
 
     cart = get_cart()
     qty = int(request.form.get('quantity', 1))
     if qty < 1: qty = 1
     
-    # +++ NEW: Real-time stock check on add +++
+    # +++ Real-time stock check on add +++
     current_in_cart = cart.get(product_id, 0)
     total_wanted = current_in_cart + qty
     
@@ -55,16 +72,18 @@ def cart_view():
     total = Decimal('0.00')
     
     cart_changed = False
-    for pid_str_guid, qty in list(cart.items()): # list() to create a copy, so pop works
-        # pid_str_guid is now the GUID
+    
+    # Iterate through cart items
+    for pid_str_guid, qty in list(cart.items()): 
         p = get_product(pid_str_guid)
-        if not p:
-            # Product no longer exists in our DB (perhaps removed by sync)
-            cart.pop(pid_str_guid, None)
-            cart_changed = True
-            continue
         
-        # +++ NEW: Get real-time stock for the view +++
+        if not p:
+            # Fail Safe: If get_product returns None, the ERP might be down.
+            # We show a warning and stop processing the cart to avoid crashes.
+            flash("Cart cannot be loaded at the moment (ERP unreachable).", "danger")
+            return render_template('cart.html', items=[], total=0)
+        
+        # +++ Get real-time stock for the view +++
         real_stock = get_erp_stock(p['ID'])
         
         subtotal = (p['price'] * qty)
@@ -72,7 +91,7 @@ def cart_view():
             'product': p, 
             'quantity': qty, 
             'subtotal': subtotal,
-            'real_stock': real_stock # For template
+            'real_stock': real_stock 
         })
         total += subtotal
     
@@ -82,7 +101,7 @@ def cart_view():
         
     return render_template('cart.html', items=items, total=total)
 
-@app.route('/cart/remove/<string:product_id>', methods=['POST']) # CHANGED: int -> string
+@app.route('/cart/remove/<string:product_id>', methods=['POST'])
 def cart_remove(product_id):
     cart = get_cart()
     cart.pop(product_id, None) # Uses GUID as key
@@ -93,15 +112,6 @@ def cart_remove(product_id):
 @app.route('/checkout', methods=['POST'])
 @login_required
 def checkout():
-    """
-    +++ COMPLETELY REWRITTEN FOR REAL-TIME RPC +++
-    Replaces local saving with an RPC call to the ERP.
-    1. Fetches/Creates ERP customer.
-    2. Checks real-time stock for *every* item.
-    3. Creates the order in the ERP via "Deep Insert".
-    4. Saves a *copy* of the order locally for "My Orders".
-    """
-    
     cart = get_cart() 
     
     if not cart:
@@ -119,19 +129,17 @@ def checkout():
         return redirect(url_for('cart_view'))
 
     erp_items_payload = []
-    local_items_for_order = []
     total = Decimal('0.00')
 
     # --- 2. Validate cart (Price & Real-time Stock) ---
     
-    # list(cart.items()) fixes the "RuntimeError: dictionary changed size"
     for pid_guid, qty in list(cart.items()): 
         p = get_product(pid_guid)
         if not p:
-            flash(f"A product in the cart is no longer available and has been removed.")
-            cart.pop(pid_guid, None) # This line requires list() above
-            save_cart(cart)
+            # +++ NEW: Fail Safe +++
+            flash(f"Checkout aborted: ERP system unreachable.", "danger")
             return redirect(url_for('cart_view'))
+            # +++ END NEW +++
 
         # --- REAL-TIME STOCK CHECK ---
         real_stock = get_erp_stock(p['ID'])
@@ -147,14 +155,7 @@ def checkout():
         erp_items_payload.append({
             "product_ID": p['ID'], # The product GUID
             "quantity": qty,
-            "itemAmount": str(subtotal) # Field added for ERP
-        })
-        
-        # For local DB copy
-        local_items_for_order.append({
-            'product': p, 
-            'quantity': qty, 
-            'unit_price': p['price']
+            "itemAmount": str(subtotal)
         })
 
     if not erp_items_payload:
@@ -162,28 +163,25 @@ def checkout():
         return redirect(url_for('cart_view'))
 
     # --- 3. Send order to ERP (Deep Insert) ---
+    cust_id = erp_customer_id['ID'] if isinstance(erp_customer_id, dict) else erp_customer_id
+
     order_payload = {
-        "customer_ID": erp_customer_id['ID'],
+        "customer_ID": cust_id,
         "orderDate": datetime.utcnow().strftime('%Y-%m-%d'),
-        "currency_code": "EUR", # Assumption
-        "orderAmount": str(total), # Field added for ERP
+        "currency_code": "EUR",
+        "orderAmount": str(total),
         "items": erp_items_payload
     }
 
     try:
-        # Now uses the global session with retry logic
         response = erp_session.post(ERP_ORDERS_URL, json=order_payload, timeout=ERP_TIMEOUT)
         
         if response.status_code == 201:
-            # --- SUCCESS ---
-            # IMPORTANT: We are NOT saving anything locally anymore. The ERP is the single source of truth.
-            
             clear_cart()
             flash('Order successfully transmitted to ERP!')
             return redirect(url_for('orders'))
             
         elif response.status_code == 400 or response.status_code == 422:
-            # --- ERP Error (e.g., stock problem or validation error) ---
             try:
                 error_msg = response.json().get('error', {}).get('message', 'Unknown ERP error')
                 details = response.json().get('error', {}).get('details', [])
@@ -196,7 +194,6 @@ def checkout():
             flash(f"ERP Error: {error_msg}")
             return redirect(url_for('cart_view'))
         else:
-            # --- Other server error ---
             flash(f"Unexpected ERP error: {response.status_code} - {response.text}")
             response.raise_for_status()
 
@@ -214,14 +211,15 @@ def checkout():
 def orders():
     """
     Fetches the order list LIVE from the ERP system (RPC).
-    No local storage.
+    Handles ERP connection errors gracefully.
     """
     my_orders = []
     
     if current_user.erp_customer_id:
         try:
-            # Filter by Customer ID in ERP
-            url = f"{ERP_ORDERS_URL}?$filter=customer_ID eq {current_user.erp_customer_id}&$orderby=createdAt desc"
+            cust_id = current_user.erp_customer_id
+            
+            url = f"{ERP_ORDERS_URL}?$filter=customer_ID eq {cust_id}&$orderby=createdAt desc"
             response = erp_session.get(url, timeout=ERP_TIMEOUT)
             
             if response.status_code == 200:
@@ -229,32 +227,30 @@ def orders():
             else:
                 flash(f"Could not load orders (ERP Status: {response.status_code})", "warning")
                 
+        # +++ CHANGED: Catch connection errors specifically +++
+        except requests.exceptions.RequestException:
+            flash("The ERP system is currently unreachable. Your orders cannot be loaded at this time.", "danger")
         except Exception as e:
-            flash(f"Connection error to ERP when loading orders: {e}", "danger")
+            flash(f"General error loading orders: {e}", "danger")
 
     return render_template('orders.html', orders=my_orders)
 
-@app.route('/order/<string:order_id>') # IMPORTANT: Now string (GUID) instead of int
+@app.route('/order/<string:order_id>')
 @login_required
 def order_detail(order_id):
     """
     Fetches details of an order LIVE from the ERP.
-    Uses $expand to load items and product names in one call.
+    Handles ERP connection errors gracefully.
     """
     order_data = None
     
     try:
-        # OData Deep Expand: Order -> Items -> Product
-        # We need 'items' and within that 'product' to display the name
         url = f"{ERP_ORDERS_URL}({order_id})?$expand=items($expand=product)"
-        
         response = erp_session.get(url, timeout=ERP_TIMEOUT)
         
         if response.status_code == 200:
             order_data = response.json()
             
-            # Security check: Does the order really belong to me?
-            # We compare the ERP customer ID of the order with that of the user
             if order_data.get('customer_ID') != current_user.erp_customer_id:
                 abort(403) # Forbidden
         elif response.status_code == 404:
@@ -262,9 +258,13 @@ def order_detail(order_id):
         else:
             flash(f"ERP Error: {response.status_code}", "danger")
             return redirect(url_for('orders'))
-            
+    
+    # +++ CHANGED: Catch connection errors specifically +++
+    except requests.exceptions.RequestException:
+        flash("The ERP system is currently unreachable. Order details cannot be loaded.", "danger")
+        return redirect(url_for('orders'))
     except Exception as e:
-        flash(f"Connection Error: {e}", "danger")
+        flash(f"General Error: {e}", "danger")
         return redirect(url_for('orders'))
 
     return render_template('order_detail.html', order=order_data)
