@@ -136,7 +136,7 @@ def checkout():
         # --- REAL-TIME STOCK CHECK ---
         real_stock = get_erp_stock(p['ID'])
         if qty > real_stock:
-            flash(f"Stock for '{p.name}' insufficient (Available: {real_stock}). Order canceled.")
+            flash(f"Stock for '{p['name']}' insufficient (Available: {real_stock}). Order canceled.")
             return redirect(url_for('cart_view'))
         
         # +++ PRICE CALCULATION +++

@@ -9,8 +9,10 @@ from . import app
 
 from .cache import cache_get, cache_set
 
-ttl_time = 45
-  # Cache TTL in seconds
+# ttl_time = 0
+ttl_time = 10 * 60
+# Cache TTL in seconds
+
 
 def get_erp_products_cached(retries=3, delay=2):
     cache_key = "erp_products_all"

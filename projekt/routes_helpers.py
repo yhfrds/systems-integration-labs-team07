@@ -78,13 +78,14 @@ def get_or_create_erp_customer(user):
         response.raise_for_status()
         customers = response.json().get('value', [])
 
+        # --- CASE 1: Already exists in ERP ---
         if customers:
             # Customer exists
             user.erp_customer_id = customers[0]['ID']
             db.session.commit()
             return customers[0]
 
-        # Customer not found → create
+        # --- CASE 2: Customer not found → create in ERP
         payload = {
             "name": user.name,
             "email": user.email,
@@ -97,7 +98,15 @@ def get_or_create_erp_customer(user):
 
         create_res = requests.post(ERP_CUSTOMERS_URL, json=payload, auth=ERP_AUTH, timeout=ERP_TIMEOUT)
         create_res.raise_for_status()
-        return create_res.json()
+
+        new_customer = create_res.json()
+
+        # Assign new ERP ID locally
+        if "ID" in new_customer:
+            user.erp_customer_id = new_customer["ID"]
+            db.session.commit()
+
+        return new_customer
 
     except Exception as e:
         print(f"ERP error in get_or_create_erp_customer: {e}")
