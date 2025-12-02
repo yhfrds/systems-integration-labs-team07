@@ -25,7 +25,7 @@
           
           <td>{{ "%.2f"|format(it.subtotal) }}</td>
           <td>
-            <form method="post" action="{{ url_for('cart_remove', product_id=it.product.id) }}">
+            <form method="post" action="{{ url_for('cart_remove', product_id=it.product.ID) }}">
               <button type="submit">Remove</button>
             </form>
           </td>
